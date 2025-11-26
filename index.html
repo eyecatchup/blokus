@@ -212,6 +212,7 @@ let history = [];
 let dragging = false;
 let dragOffset = {x:0,y:0};
 let selectedPieceElement = null; // Reference to the selected piece's DOM element
+let boardCellTouchStart = null; // Track touch start on board cells to distinguish taps from drags
 // Create a transparent drag image element to avoid overlaying the ghost preview
 const emptyDragImage = document.createElement('div');
 emptyDragImage.style.width = '1px';
@@ -236,6 +237,8 @@ function init(){
   selectedOrientation.cells = [];
   selectedPieceElement = null;
   history = [];
+  dragging = false;
+  boardCellTouchStart = null;
   renderBoard();
   renderPalette();
   // Board-level touchmove handler to track touches across cells (only add once)
@@ -347,11 +350,31 @@ function renderBoard(){
           clearGhost();
         }
       });
+      // Click handler for placing selected piece
+      c.addEventListener('click',(e)=>{
+        // Only place if piece is selected and we're not in a drag operation
+        if(selectedPiece && !dragging){
+          const x=parseInt(c.dataset.x,10);
+          const y=parseInt(c.dataset.y,10);
+          handlePlacement(c, x, y);
+        }
+      });
       // Touch support
+      c.addEventListener('touchstart',(e)=>{
+        if(selectedPiece && e.touches[0]){
+          boardCellTouchStart = {x: e.touches[0].clientX, y: e.touches[0].clientY};
+        }
+      }, {passive: true});
       c.addEventListener('touchmove',(e)=>{
         e.preventDefault();
         if(selectedPiece && !dragging){
-          dragging = true;
+          if(boardCellTouchStart && e.touches[0]){
+            const moved = Math.abs(e.touches[0].clientX - boardCellTouchStart.x) > 10 || 
+                         Math.abs(e.touches[0].clientY - boardCellTouchStart.y) > 10;
+            if(moved){
+              dragging = true;
+            }
+          }
         }
         if(dragging && selectedPiece){
           lastHoveredCell = c;
@@ -362,16 +385,33 @@ function renderBoard(){
       }, {passive: false});
       c.addEventListener('touchend',(e)=>{
         e.preventDefault();
-        if(dragging && selectedPiece){
-          const x=parseInt(c.dataset.x,10);
-          const y=parseInt(c.dataset.y,10);
-          handlePlacement(c, x, y);
-          dragging = false;
-          clearGhost();
+        if(selectedPiece && e.changedTouches && e.changedTouches[0]){
+          const touch = e.changedTouches[0];
+          const wasTap = boardCellTouchStart && 
+                        (Math.abs(touch.clientX - boardCellTouchStart.x) <= 10 && 
+                         Math.abs(touch.clientY - boardCellTouchStart.y) <= 10);
+          
+          if(dragging && selectedPiece){
+            // Was a drag - place at this cell
+            const x=parseInt(c.dataset.x,10);
+            const y=parseInt(c.dataset.y,10);
+            handlePlacement(c, x, y);
+            dragging = false;
+            clearGhost();
+            e.stopPropagation(); // Prevent board-level handler from also handling this
+          } else if(wasTap && selectedPiece && !dragging){
+            // Was a tap - place at this cell
+            const x=parseInt(c.dataset.x,10);
+            const y=parseInt(c.dataset.y,10);
+            handlePlacement(c, x, y);
+            e.stopPropagation(); // Prevent board-level handler from also handling this
+          }
+          boardCellTouchStart = null;
         }
       });
       c.addEventListener('touchcancel',()=>{
         dragging = false;
+        boardCellTouchStart = null;
         clearGhost();
       });
       boardEl.appendChild(c);
@@ -753,15 +793,6 @@ function rotatePiece(orientation){
   const minX = Math.min(...rotated.map(c=>c[0]));
   const minY = Math.min(...rotated.map(c=>c[1]));
   orientation.cells = rotated.map(([x,y])=>[x-minX, y-minY]);
-}
-
-function flipPiece(orientation){
-  // Flip horizontally: (x, y) -> (-x, y)
-  const flipped = orientation.cells.map(([x,y])=>[-x, y]);
-  // Normalize: shift so minX=0, minY=0
-  const minX = Math.min(...flipped.map(c=>c[0]));
-  const minY = Math.min(...flipped.map(c=>c[1]));
-  orientation.cells = flipped.map(([x,y])=>[x-minX, y-minY]);
 }
 
 function updateSelectedPieceVisual(){
