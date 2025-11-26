@@ -126,6 +126,9 @@
     body {
       padding: 12px;
     }
+    h1 {
+      display: none;
+    }
     .game {
       flex-direction: column;
       align-items: center;
@@ -167,7 +170,7 @@
     </div>
   </div>
 </div>
-<div class="footer">Controls: <em>click piece</em> to select ● <em>click again</em> to rotate piece ● Drag piece to board to place ● Keys: U undo</div>
+<div class="footer"><em>Click piece</em> to select ● <em>Click again</em> to rotate (optional) ● Drag piece to board or click cell to place</div>
 <script>
 // Drag-and-drop enabled version
 // --- CONFIG ---
@@ -783,7 +786,69 @@ function validBlokusContact(cells,player){
   return hasCorner;
 }
 
-function nextTurn(){ currentPlayer=(currentPlayer+1)%PLAYERS.length; }
+// Check if a player has any valid moves
+function hasValidMoves(player){
+  // Get all unused pieces for this player
+  const unusedPieces = PIECES.filter(p => !usedPieces[player].has(p.id));
+  if(unusedPieces.length === 0) return false;
+  
+  // For each unused piece, try all rotations and all positions
+  for(const piece of unusedPieces){
+    // Generate all 4 rotations (0°, 90°, 180°, 270°)
+    const orientations = [];
+    let cells = piece.cells.map(c => [c[0], c[1]]);
+    
+    for(let rot = 0; rot < 4; rot++){
+      // Normalize the orientation
+      const minX = Math.min(...cells.map(c => c[0]));
+      const minY = Math.min(...cells.map(c => c[1]));
+      const normalized = cells.map(([x, y]) => [x - minX, y - minY]);
+      orientations.push(normalized);
+      
+      // Rotate for next iteration: (x, y) -> (y, -x)
+      cells = cells.map(([x, y]) => [y, -x]);
+    }
+    
+    // Try each orientation at every position on the board
+    for(const orientation of orientations){
+      const minX = Math.min(...orientation.map(c => c[0]));
+      const minY = Math.min(...orientation.map(c => c[1]));
+      const maxX = Math.max(...orientation.map(c => c[0]));
+      const maxY = Math.max(...orientation.map(c => c[1]));
+      
+      // Try placing at every position
+      for(let y = 0; y < SIZE; y++){
+        for(let x = 0; x < SIZE; x++){
+          // Calculate placement
+          const placed = orientation.map(([cx, cy]) => [x + (cx - minX), y + (cy - minY)]);
+          
+          // Check if valid
+          if(isInsideBoard(placed) && isEmpty(placed) && validBlokusContact(placed, player)){
+            return true; // Found at least one valid move
+          }
+        }
+      }
+    }
+  }
+  
+  return false; // No valid moves found
+}
+
+function nextTurn(){ 
+  const startPlayer = currentPlayer;
+  let attempts = 0;
+  
+  // Advance to next player
+  currentPlayer = (currentPlayer + 1) % PLAYERS.length;
+  
+  // Skip players with no valid moves
+  while(!hasValidMoves(currentPlayer) && attempts < PLAYERS.length){
+    const playerName = PLAYERS[currentPlayer].name;
+    alert(`Player ${playerName} has no more valid options.`);
+    currentPlayer = (currentPlayer + 1) % PLAYERS.length;
+    attempts++;
+  }
+}
 
 // --- ROTATION / FLIP ---
 function rotatePiece(orientation){
