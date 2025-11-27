@@ -853,6 +853,19 @@ function nextTurn(){
     currentPlayer = (currentPlayer + 1) % PLAYERS.length;
     attempts++;
   }
+  
+  // Check for game end conditions
+  const playersWithValidMoves = PLAYERS.filter(p => hasValidMoves(p.id));
+  const validMoveCount = playersWithValidMoves.length;
+  
+  if(validMoveCount === 1){
+    // Only one player left with valid moves - they win
+    const winner = playersWithValidMoves[0];
+    alert(`Player ${winner.name} won.`);
+  } else if(validMoveCount === 0){
+    // No players have valid moves - game over
+    alert(`No more valid options. Game over.`);
+  }
 }
 
 // --- ROTATION / FLIP ---
