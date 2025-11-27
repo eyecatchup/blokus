@@ -481,6 +481,16 @@ function renderBoard(){
           const wasTap = boardCellTouchStart && 
                         isTapMovement(boardCellTouchStart.x, boardCellTouchStart.y, touch.clientX, touch.clientY, 10);
           
+          // If in preview mode, handle directly as cell interaction
+          if(isPreviewing()){
+            const x=parseInt(c.dataset.x,10);
+            const y=parseInt(c.dataset.y,10);
+            handleCellInteraction(c, x, y);
+            boardCellTouchStart = null;
+            return;
+          }
+          
+          // Otherwise, handle as drag/tap
           const result = handleDragEnd(touch.clientX, touch.clientY);
           if(result){
             if(result.type === 'drag' && result.cell){
