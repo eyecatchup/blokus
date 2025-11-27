@@ -109,12 +109,36 @@ PIECES.forEach(piece => {
           }
         }
       }
+      
+      // Also generate flipped version of this rotation (for flipPiece to find)
+      const flipped = normalized.map(([x, y]) => [-x, y]);
+      const flippedNormalized = normalizeOrientation(flipped);
+      const flippedKey = orientationToKey(flippedNormalized);
+      
+      // If flipped version is different, add it to orientations
+      if(!seen.has(flippedKey)){
+        orientations.push(flippedNormalized);
+        seen.add(flippedKey);
+        
+        // Precompute placements for flipped orientation
+        placementCache[piece.id][flippedKey] = Array.from({length: SIZE}, () => []);
+        for(let y = 0; y < SIZE; y++){
+          placementCache[piece.id][flippedKey][y] = Array.from({length: SIZE}, () => null);
+          for(let x = 0; x < SIZE; x++){
+            const adjusted = computeAdjustedPlacement(flippedNormalized, x, y);
+            if(isInsideBoardInline(adjusted)){
+              placementCache[piece.id][flippedKey][y][x] = adjusted;
+            }
+          }
+        }
+      }
     }
     
     // Rotate for next iteration: (x, y) -> (y, -x)
     // Always create new array, don't mutate
     cells = cells.map(([x, y]) => [y, -x]);
   }
+  
   
   PIECE_ORIENTATIONS.set(piece.id, orientations);
 });
@@ -129,8 +153,17 @@ const InteractionState = {
 
 let interactionState = InteractionState.NONE;
 let selectedPiece = null; // Piece data object
-let selectedOrientation = {cells:[]};
+let selectedOrientation = {index: 0}; // Index into PIECE_ORIENTATIONS[piece.id]
 let selectedPieceElement = null; // Reference to the selected piece's DOM element
+
+// Get current orientation cells from precomputed orientations (never recalculate)
+function getCurrentOrientation(){
+  if(!selectedPiece) return [];
+  const orientations = PIECE_ORIENTATIONS.get(selectedPiece.id);
+  if(!orientations || orientations.length === 0) return [];
+  const index = selectedOrientation.index % orientations.length;
+  return orientations[index];
+}
 let dragStart = {x: 0, y: 0};
 let hoveringCell = null; // {x, y} or null
 let previewCell = null; // DOM element reference for preview mode
@@ -283,7 +316,7 @@ function init(){
   usedPieces = {}; PLAYERS.forEach(p=>usedPieces[p.id]=new Set());
   currentPlayer = 0;
   selectedPiece = null;
-  selectedOrientation.cells = [];
+  selectedOrientation.index = 0;
   selectedPieceElement = null;
   history = [];
   interactionState = InteractionState.NONE;
@@ -642,7 +675,7 @@ function renderPalette(){
       
       // Check if this piece is already selected BEFORE deselecting others
       // The most reliable check is if this wrapper is the selectedPieceElement
-      if(selectedPieceElement === wrapper && selectedPiece && selectedOrientation.cells.length > 0){
+      if(selectedPieceElement === wrapper && selectedPiece && getCurrentOrientation().length > 0){
         // Rotate the already-selected piece
         rotatePiece(selectedOrientation);
         // Update ghost preview if in preview mode or if we have a last hovered cell
@@ -669,7 +702,7 @@ function renderPalette(){
       // Select this piece
       wrapper.classList.add('selected');
       selectedPiece = JSON.parse(JSON.stringify(piece));
-      selectedOrientation.cells = selectedPiece.cells.map(c=>[c[0],c[1]]);
+      selectedOrientation.index = 0; // Start with first orientation
       selectedPieceElement = wrapper;
       // Invalidate bounding box cache for new piece
       cachedBoundingBox = null;
@@ -866,17 +899,18 @@ function clearGhost(){
   ghostCells=[]; 
 }
 
-// Cache bounding box when orientation changes
+// Cache bounding box when orientation changes (no longer needed, but kept for compatibility)
 function updateBoundingBoxCache(){
-  if(!selectedOrientation || !selectedOrientation.cells.length){
+  const cells = getCurrentOrientation();
+  if(!cells || cells.length === 0){
     cachedBoundingBox = null;
     return;
   }
   cachedBoundingBox = {
-    minX: Math.min(...selectedOrientation.cells.map(c=>c[0])),
-    minY: Math.min(...selectedOrientation.cells.map(c=>c[1])),
-    maxX: Math.max(...selectedOrientation.cells.map(c=>c[0])),
-    maxY: Math.max(...selectedOrientation.cells.map(c=>c[1]))
+    minX: Math.min(...cells.map(c=>c[0])),
+    minY: Math.min(...cells.map(c=>c[1])),
+    maxX: Math.max(...cells.map(c=>c[0])),
+    maxY: Math.max(...cells.map(c=>c[1]))
   };
 }
 
@@ -890,7 +924,9 @@ function updateGhostPreview(cellEl, x, y){
   clearGhost();
   
   // Get orientation key for cache lookup
-  const orientationKey = orientationToKey(selectedOrientation.cells);
+  const currentCells = getCurrentOrientation();
+  if(!currentCells || currentCells.length === 0) return;
+  const orientationKey = orientationToKey(currentCells);
   
   // Look up precomputed placement from cache (zero math, zero GC)
   const placed = placementCache[selectedPiece.id]?.[orientationKey]?.[y]?.[x];
@@ -958,13 +994,19 @@ function handlePlacement(cellEl, x, y){
   if(!selectedPiece || isPlacing) return;
   isPlacing = true; // Prevent duplicate calls
   
-  const minX=Math.min(...selectedOrientation.cells.map(c=>c[0]));
-  const minY=Math.min(...selectedOrientation.cells.map(c=>c[1]));
-  const maxX=Math.max(...selectedOrientation.cells.map(c=>c[0]));
-  const maxY=Math.max(...selectedOrientation.cells.map(c=>c[1]));
+  const currentCells = getCurrentOrientation();
+  if(!currentCells || currentCells.length === 0) {
+    isPlacing = false;
+    return;
+  }
+  
+  const minX=Math.min(...currentCells.map(c=>c[0]));
+  const minY=Math.min(...currentCells.map(c=>c[1]));
+  const maxX=Math.max(...currentCells.map(c=>c[0]));
+  const maxY=Math.max(...currentCells.map(c=>c[1]));
   
   // Calculate initial placement
-  let placed = selectedOrientation.cells.map(([cx,cy])=>[x+(cx-minX), y+(cy-minY)]);
+  let placed = currentCells.map(([cx,cy])=>[x+(cx-minX), y+(cy-minY)]);
   
   // Adjust placement if it would go out of bounds
   if(!isInsideBoard(placed)){
@@ -973,7 +1015,7 @@ function handlePlacement(cellEl, x, y){
     if(y + maxY >= SIZE) y = SIZE - 1 - maxY;
     if(x < 0) x = 0;
     if(y < 0) y = 0;
-    placed = selectedOrientation.cells.map(([cx,cy])=>[x+(cx-minX), y+(cy-minY)]);
+    placed = currentCells.map(([cx,cy])=>[x+(cx-minX), y+(cy-minY)]);
   }
 
   if(!isInsideBoard(placed)){ 
@@ -996,7 +1038,7 @@ function handlePlacement(cellEl, x, y){
   usedPieces[currentPlayer].add(selectedPiece.id);
   history.push({player:currentPlayer,placed,pid:selectedPiece.id});
 
-  selectedPiece=null;selectedOrientation.cells=[];selectedPieceElement=null;
+  selectedPiece=null;selectedOrientation.index=0;selectedPieceElement=null;
   setDragging(false);
   setPreviewMode(false);
   previewCell = null;
@@ -1183,29 +1225,37 @@ function nextTurn(){
 
 // --- ROTATION / FLIP ---
 function rotatePiece(orientation){
-  // Rotate 90 degrees clockwise: (x, y) -> (y, -x)
-  const rotated = orientation.cells.map(([x,y])=>[y, -x]);
-  // Normalize: shift so minX=0, minY=0
-  const minX = Math.min(...rotated.map(c=>c[0]));
-  const minY = Math.min(...rotated.map(c=>c[1]));
-  orientation.cells = rotated.map(([x,y])=>[x-minX, y-minY]);
-  // Invalidate bounding box cache
-  cachedBoundingBox = null;
+  // Just increment index into precomputed orientations (zero calculations)
+  if(!selectedPiece) return;
+  const orientations = PIECE_ORIENTATIONS.get(selectedPiece.id);
+  if(!orientations || orientations.length === 0) return;
+  orientation.index = (orientation.index + 1) % orientations.length;
 }
 
 function flipPiece(orientation){
-  // Flip horizontally: (x, y) -> (-x, y)
-  const flipped = orientation.cells.map(([x,y])=>[-x, y]);
-  // Normalize: shift so minX=0, minY=0
-  const minX = Math.min(...flipped.map(c=>c[0]));
-  const minY = Math.min(...flipped.map(c=>c[1]));
-  orientation.cells = flipped.map(([x,y])=>[x-minX, y-minY]);
-  // Invalidate bounding box cache
-  cachedBoundingBox = null;
+  // Find matching flipped orientation in precomputed list (zero calculations)
+  if(!selectedPiece) return;
+  const orientations = PIECE_ORIENTATIONS.get(selectedPiece.id);
+  if(!orientations || orientations.length === 0) return;
+  
+  const currentCells = getCurrentOrientation();
+  const currentKey = orientationToKey(currentCells);
+  
+  // Generate what the flipped version would be
+  const flipped = currentCells.map(([x, y]) => [-x, y]);
+  const flippedNormalized = normalizeOrientation(flipped);
+  const flippedKey = orientationToKey(flippedNormalized);
+  
+  // Find matching orientation in precomputed list
+  const flippedIndex = orientations.findIndex(orient => orientationToKey(orient) === flippedKey);
+  if(flippedIndex !== -1){
+    orientation.index = flippedIndex;
+  }
 }
 
 function updateSelectedPieceVisual(){
-  if(!selectedPieceElement || !selectedOrientation.cells.length) return;
+  const currentCells = getCurrentOrientation();
+  if(!selectedPieceElement || !currentCells || currentCells.length === 0) return;
   const grid = selectedPieceElement.querySelector('div[style*="grid"]');
   if(!grid) return;
   // Clear all cells
@@ -1215,7 +1265,7 @@ function updateSelectedPieceVisual(){
   });
   
   // Convert current orientation to 5x5 grid positions (normalized and centered)
-  const gridCells = pieceToGrid({cells: selectedOrientation.cells});
+  const gridCells = pieceToGrid({cells: currentCells});
   
   // Draw cells at their grid positions
   gridCells.forEach(([x, y]) => {
@@ -1241,7 +1291,7 @@ function undo(){
   currentPlayer=last.player;updateBoardBorder();renderBoard();renderPalette();renderScores();
 }
 flipBtn.addEventListener('click',()=>{
-  if(selectedPiece && selectedOrientation.cells.length > 0){
+  if(selectedPiece && getCurrentOrientation().length > 0){
     flipPiece(selectedOrientation);
     updateSelectedPieceVisual();
     // Update ghost preview if in preview mode or if we have a last hovered cell
@@ -1257,7 +1307,7 @@ flipBtn.addEventListener('click',()=>{
   }
 });
 rotateBtn.addEventListener('click',()=>{
-  if(selectedPiece && selectedOrientation.cells.length > 0){
+  if(selectedPiece && getCurrentOrientation().length > 0){
     rotatePiece(selectedOrientation);
     updateSelectedPieceVisual();
     // Update ghost preview if in preview mode or if we have a last hovered cell
