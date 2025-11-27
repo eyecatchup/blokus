@@ -512,6 +512,19 @@ function renderBoard(){
   initCellCache();
 }
 
+// Convert piece cells to 5x5 grid positions (normalized and centered)
+function pieceToGrid(piece){
+  const cells = normalizeOrientation(piece.cells);
+  const width = Math.max(...cells.map(c => c[0])) + 1;
+  const height = Math.max(...cells.map(c => c[1])) + 1;
+
+  // Fit into 5×5 simply by centering
+  const offsetX = Math.floor((5 - width) / 2);
+  const offsetY = Math.floor((5 - height) / 2);
+
+  return cells.map(([x, y]) => [x + offsetX, y + offsetY]);
+}
+
 // --- RENDER PALETTE (click to select, then drag) ---
 function renderPalette(){
   paletteEl.innerHTML='';
@@ -526,39 +539,22 @@ function renderPalette(){
     }
     wrapper.title=piece.name+(isUsed?" (used)":" — click to select, then drag to board");
 
-    // Calculate piece dimensions and scale to fill more space
-    const minX = Math.min(...piece.cells.map(c=>c[0]));
-    const maxX = Math.max(...piece.cells.map(c=>c[0]));
-    const minY = Math.min(...piece.cells.map(c=>c[1]));
-    const maxY = Math.max(...piece.cells.map(c=>c[1]));
-    const pieceWidth = maxX - minX + 1;
-    const pieceHeight = maxY - minY + 1;
-    const maxDim = Math.max(pieceWidth, pieceHeight);
-    
-    // Scale to use most of the 5x5 grid
-    // Allow pieces up to 5 cells to use full grid, scale larger pieces
-    const scale = maxDim <= 5 ? 1 : Math.min(4 / maxDim, 1);
-    const scaledWidth = maxDim <= 5 ? pieceWidth : Math.ceil(pieceWidth * scale);
-    const scaledHeight = maxDim <= 5 ? pieceHeight : Math.ceil(pieceHeight * scale);
-    
-    // Center the scaled piece in the 5x5 grid
-    const offsetX = Math.floor((5 - scaledWidth) / 2);
-    const offsetY = Math.floor((5 - scaledHeight) / 2);
+    // Convert piece to 5x5 grid positions (normalized and centered)
+    const gridCells = pieceToGrid(piece);
     
     const grid=document.createElement('div');grid.style.display='grid';grid.style.gridTemplateColumns='repeat(5,1fr)';grid.style.gridTemplateRows='repeat(5,1fr)';grid.style.width='100%';grid.style.height='100%';
     const cells=Array.from({length:25},()=>document.createElement('div'));
     cells.forEach(c=>c.className='px');
-    piece.cells.forEach(([cx,cy])=>{
-      // Scale and center the cell position
-      // For pieces <= 5 cells, use direct mapping; for larger pieces, scale
-      const scaledX = maxDim <= 5 ? (cx - minX) + offsetX : Math.round((cx - minX) * scale) + offsetX;
-      const scaledY = maxDim <= 5 ? (cy - minY) + offsetY : Math.round((cy - minY) * scale) + offsetY;
-      const idx = scaledY * 5 + scaledX;
+    
+    // Render cells at their grid positions
+    gridCells.forEach(([x, y]) => {
+      const idx = y * 5 + x;
       if(cells[idx] && idx >= 0 && idx < 25){
         cells[idx].style.background=PLAYERS[currentPlayer].color;
         cells[idx].style.borderRadius='4px';
       }
     });
+    
     cells.forEach(c=>grid.appendChild(c));
     wrapper.appendChild(grid);
 
@@ -1152,29 +1148,13 @@ function updateSelectedPieceVisual(){
     c.style.background='';
     c.style.borderRadius='';
   });
-  // Calculate dimensions and scale (same logic as renderPalette)
-  const minX = Math.min(...selectedOrientation.cells.map(c=>c[0]));
-  const maxX = Math.max(...selectedOrientation.cells.map(c=>c[0]));
-  const minY = Math.min(...selectedOrientation.cells.map(c=>c[1]));
-  const maxY = Math.max(...selectedOrientation.cells.map(c=>c[1]));
-  const pieceWidth = maxX - minX + 1;
-  const pieceHeight = maxY - minY + 1;
-  const maxDim = Math.max(pieceWidth, pieceHeight);
   
-  // Allow pieces up to 5 cells to use full grid, scale larger pieces
-  const scale = maxDim <= 5 ? 1 : Math.min(4 / maxDim, 1);
-  const scaledWidth = maxDim <= 5 ? pieceWidth : Math.ceil(pieceWidth * scale);
-  const scaledHeight = maxDim <= 5 ? pieceHeight : Math.ceil(pieceHeight * scale);
+  // Convert current orientation to 5x5 grid positions (normalized and centered)
+  const gridCells = pieceToGrid({cells: selectedOrientation.cells});
   
-  const offsetX = Math.floor((5 - scaledWidth) / 2);
-  const offsetY = Math.floor((5 - scaledHeight) / 2);
-  
-  // Draw current orientation with scaling
-  selectedOrientation.cells.forEach(([cx,cy])=>{
-    // For pieces <= 5 cells, use direct mapping; for larger pieces, scale
-    const scaledX = maxDim <= 5 ? (cx - minX) + offsetX : Math.round((cx - minX) * scale) + offsetX;
-    const scaledY = maxDim <= 5 ? (cy - minY) + offsetY : Math.round((cy - minY) * scale) + offsetY;
-    const idx = scaledY * 5 + scaledX;
+  // Draw cells at their grid positions
+  gridCells.forEach(([x, y]) => {
+    const idx = y * 5 + x;
     const cell = grid.querySelectorAll('.px')[idx];
     if(cell && idx >= 0 && idx < 25){
       cell.style.background=PLAYERS[currentPlayer].color;
