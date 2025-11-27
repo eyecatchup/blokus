@@ -35,6 +35,10 @@ const PIECES = [
 const PIECE_ORIENTATIONS = new Map();
 // Precomputed placement cache: placementCache[pieceId][orientationKey][y][x] = adjustedCells[]
 const placementCache = {};
+// Precomputed bounding boxes: boundingBoxCache[pieceId][orientationKey] = {minX, minY, maxX, maxY}
+const boundingBoxCache = {};
+// Cache for valid moves per player: validMovesCache[playerId] = boolean (invalidated on placement)
+const validMovesCache = {};
 
 function normalizeOrientation(cells){
   const minX = Math.min(...cells.map(c => c[0]));
@@ -84,8 +88,9 @@ PIECES.forEach(piece => {
   const seen = new Set(); // Use Set for O(1) lookup instead of O(n) array search
   let cells = piece.cells.map(c => [c[0], c[1]]); // Start with fresh copy
   
-  // Initialize cache for this piece
+  // Initialize caches for this piece
   placementCache[piece.id] = {};
+  boundingBoxCache[piece.id] = {};
   
   // Generate all 4 rotations (0°, 90°, 180°, 270°)
   for(let rot = 0; rot < 4; rot++){
@@ -96,6 +101,14 @@ PIECES.forEach(piece => {
     if(!seen.has(key)){
       orientations.push(normalized);
       seen.add(key);
+      
+      // Precompute bounding box for this orientation
+      boundingBoxCache[piece.id][key] = {
+        minX: Math.min(...normalized.map(c => c[0])),
+        minY: Math.min(...normalized.map(c => c[1])),
+        maxX: Math.max(...normalized.map(c => c[0])),
+        maxY: Math.max(...normalized.map(c => c[1]))
+      };
       
       // Precompute all adjusted placements for this orientation
       placementCache[piece.id][key] = Array.from({length: SIZE}, () => []);
@@ -119,6 +132,14 @@ PIECES.forEach(piece => {
       if(!seen.has(flippedKey)){
         orientations.push(flippedNormalized);
         seen.add(flippedKey);
+        
+        // Precompute bounding box for flipped orientation
+        boundingBoxCache[piece.id][flippedKey] = {
+          minX: Math.min(...flippedNormalized.map(c => c[0])),
+          minY: Math.min(...flippedNormalized.map(c => c[1])),
+          maxX: Math.max(...flippedNormalized.map(c => c[0])),
+          maxY: Math.max(...flippedNormalized.map(c => c[1]))
+        };
         
         // Precompute placements for flipped orientation
         placementCache[piece.id][flippedKey] = Array.from({length: SIZE}, () => []);
@@ -299,6 +320,7 @@ function handleResize(){
   clearTimeout(resizeTimeout);
   resizeTimeout = setTimeout(() => {
     resizeBoard();
+    updateBoardDimensionsCache(); // Update cached board dimensions on resize
   }, 100);
 }
 
@@ -330,53 +352,22 @@ function init(){
   renderPalette();
   renderScores();
   resizeBoard();
-  // Board-level touchmove handler to track touches across cells (only add once)
-  boardEl.removeEventListener('touchmove', handleBoardTouchMove);
-  boardEl.addEventListener('touchmove', handleBoardTouchMove, {passive: false});
-  // Board-level touchend handler to place piece when touch ends while dragging
-  boardEl.removeEventListener('touchend', handleBoardTouchEnd);
-  boardEl.addEventListener('touchend', handleBoardTouchEnd, {passive: false});
+  updateBoardDimensionsCache(); // Initialize board dimensions cache
+  // Invalidate valid moves cache
+  PLAYERS.forEach(p => validMovesCache[p.id] = undefined);
   // Document-level touchmove handler to catch all touch moves for ghost preview
   document.removeEventListener('touchmove', handleDocumentTouchMove);
   document.addEventListener('touchmove', handleDocumentTouchMove, {passive: false});
 }
 
-function handleBoardTouchMove(e){
-  if(selectedPiece && e.touches && e.touches[0]){
-    const touch = e.touches[0];
-    // If not yet dragging, try to start
-    if(interactionState === InteractionState.NONE){
-      handleDragStart(touch.clientX, touch.clientY);
-    }
-    // Update drag movement
-    if(interactionState !== InteractionState.NONE){
-      e.preventDefault();
-      handleDragMove(touch.clientX, touch.clientY);
-    }
-  }
-}
-
-function handleBoardTouchEnd(e){
-  // Only handle if we're still in a dragging state (not already handled by cell)
-  // handleDragEnd resets state to NONE, so if state is already NONE, it was already called
-  if(!selectedPiece || interactionState === InteractionState.NONE || isPlacing) return;
-  
-  if(e.changedTouches && e.changedTouches[0]){
-    e.preventDefault();
-    const touch = e.changedTouches[0];
-    // handleDragEnd will return null if already called, preventing duplicate placement
-    const result = handleDragEnd(touch.clientX, touch.clientY);
-    if(result && result.type === 'drag' && result.cell){
-      handlePlacement(result.cell, result.x, result.y);
-    }
-  }
-}
 
 function handleDocumentTouchMove(e){
   // Update ghost preview during touch dragging, regardless of where touch started
+  // This is the primary handler for all touch moves during drag operations
   if(selectedPiece && e.touches && e.touches[0]){
     const touch = e.touches[0];
-    if(interactionState !== InteractionState.NONE){
+    // Handle if we're in any drag-related state (SELECTING or DRAGGING)
+    if(interactionState === InteractionState.DRAGGING || interactionState === InteractionState.SELECTING){
       e.preventDefault();
       handleDragMove(touch.clientX, touch.clientY);
     }
@@ -392,19 +383,29 @@ function initCellCache(){
   );
 }
 
+// Cache for board rect and cell size (updated on resize)
+let cachedBoardRect = null;
+let cachedCellSize = null;
+
+// Update cached board dimensions (call on resize)
+function updateBoardDimensionsCache(){
+  if(!boardEl || !cellEls || !cellEls[0] || !cellEls[0][0]) return;
+  cachedBoardRect = boardEl.getBoundingClientRect();
+  cachedCellSize = cellEls[0][0].getBoundingClientRect().width;
+}
+
 // Get cell coordinates and element from client coordinates (O(1) math, no DOM queries)
 function getCellAt(clientX, clientY){
   if(!boardEl || !cellEls || !cellEls[0] || !cellEls[0][0]) return null;
   
-  // Get board bounding rect (cached per frame, very fast)
-  const boardRect = boardEl.getBoundingClientRect();
-  
-  // Get cell size from first cell (uniform grid, so all cells same size)
-  const cellSize = cellEls[0][0].getBoundingClientRect().width;
+  // Use cached board rect and cell size (updated on resize)
+  if(!cachedBoardRect || !cachedCellSize){
+    updateBoardDimensionsCache();
+  }
   
   // Calculate grid coordinates using simple math
-  const gx = Math.floor((clientX - boardRect.left) / cellSize);
-  const gy = Math.floor((clientY - boardRect.top) / cellSize);
+  const gx = Math.floor((clientX - cachedBoardRect.left) / cachedCellSize);
+  const gy = Math.floor((clientY - cachedBoardRect.top) / cachedCellSize);
   
   // Validate bounds
   if(gx >= 0 && gy >= 0 && gx < SIZE && gy < SIZE && cellEls[gy] && cellEls[gy][gx]){
@@ -529,8 +530,18 @@ function setPreviewMode(value){
   }
 }
 
+// Touch start tracking for board cells (used with event delegation)
+const boardCellTouchStarts = new WeakMap();
+
 // --- RENDER BOARD ---
 function renderBoard(){
+  // Remove old event listeners if they exist
+  boardEl.removeEventListener('click', handleBoardClick);
+  boardEl.removeEventListener('touchstart', handleBoardTouchStart);
+  boardEl.removeEventListener('touchmove', handleBoardTouchMove);
+  boardEl.removeEventListener('touchend', handleBoardTouchEnd);
+  boardEl.removeEventListener('touchcancel', handleBoardTouchCancel);
+  
   boardEl.innerHTML='';
   cellEls = Array.from({length: SIZE}, () => []);
   for(let y=0;y<SIZE;y++){
@@ -542,6 +553,7 @@ function renderBoard(){
       if(cell!=null){
         const dot=document.createElement('div');dot.className='dot';dot.style.background=PLAYERS[cell.player].color;c.appendChild(dot);
       }
+      // Drag events must stay on cells (can't use delegation)
       c.addEventListener('dragover',onDragOver);
       c.addEventListener('drop',onDrop);
       c.addEventListener('dragleave',(e)=>{
@@ -549,78 +561,97 @@ function renderBoard(){
           clearGhost();
         }
       });
-      // Click handler for placing selected piece (with preview mode)
-      c.addEventListener('click',(e)=>{
-        // Only handle if piece is selected and we're not in a drag operation
-        if(selectedPiece && !isDragging()){
-          const x=parseInt(c.dataset.x,10);
-          const y=parseInt(c.dataset.y,10);
-          handleCellInteraction(c, x, y);
-        }
-      });
-      // Touch support - use shared drag handlers
-      let boardCellTouchStart = null;
-      c.addEventListener('touchstart',(e)=>{
-        if(selectedPiece && e.touches[0] && interactionState === InteractionState.NONE){
-          const touch = e.touches[0];
-          boardCellTouchStart = {x: touch.clientX, y: touch.clientY};
-          handleDragStart(touch.clientX, touch.clientY);
-        }
-      }, {passive: true});
-      c.addEventListener('touchmove',(e)=>{
-        if(selectedPiece && e.touches[0]){
-          e.preventDefault();
-          const touch = e.touches[0];
-          handleDragMove(touch.clientX, touch.clientY);
-        }
-      }, {passive: false});
-      c.addEventListener('touchend',(e)=>{
-        if(selectedPiece && e.changedTouches && e.changedTouches[0]){
-          e.preventDefault();
-          e.stopPropagation(); // Stop propagation immediately to prevent board handler
-          const touch = e.changedTouches[0];
-          const wasTap = boardCellTouchStart && 
-                        isTapMovement(boardCellTouchStart.x, boardCellTouchStart.y, touch.clientX, touch.clientY, 10);
-          
-          // If in preview mode, handle directly as cell interaction
-          if(isPreviewing()){
-            const x=parseInt(c.dataset.x,10);
-            const y=parseInt(c.dataset.y,10);
-            handleCellInteraction(c, x, y);
-            boardCellTouchStart = null;
-            return;
-          }
-          
-          // Otherwise, handle as drag/tap
-          const result = handleDragEnd(touch.clientX, touch.clientY);
-          if(result){
-            if(result.type === 'drag' && result.cell){
-              // Was a drag - place at this cell immediately
-              handlePlacement(result.cell, result.x, result.y);
-            } else if(wasTap && result.type === 'tap'){
-              // Was a tap - handle with preview mode
-              const x=parseInt(c.dataset.x,10);
-              const y=parseInt(c.dataset.y,10);
-              handleCellInteraction(c, x, y);
-            }
-          }
-          boardCellTouchStart = null;
-        }
-      });
-      c.addEventListener('touchcancel',()=>{
-        interactionState = InteractionState.NONE;
-        hoveringCell = null;
-        boardCellTouchStart = null;
-        setPreviewMode(false);
-        previewCell = null;
-        clearGhost();
-      });
       boardEl.appendChild(c);
       if(cellEls[y]) cellEls[y][x] = c;
     }
   }
+  
+  // Use event delegation for click and touch events (more efficient)
+  boardEl.addEventListener('click', handleBoardClick);
+  boardEl.addEventListener('touchstart', handleBoardTouchStart, {passive: true});
+  // Note: touchmove is handled by handleDocumentTouchMove for global coverage
+  // We still add board-level handler as backup
+  boardEl.addEventListener('touchmove', handleBoardTouchMove, {passive: false});
+  boardEl.addEventListener('touchend', handleBoardTouchEnd, {passive: false});
+  boardEl.addEventListener('touchcancel', handleBoardTouchCancel);
+  
   // Update cell cache after rendering
   initCellCache();
+  updateBoardDimensionsCache(); // Update cached dimensions
+}
+
+// Event delegation handlers for board
+function handleBoardClick(e){
+  const cell = e.target.closest('.cell');
+  if(!cell || !selectedPiece || isDragging()) return;
+  const x=parseInt(cell.dataset.x,10);
+  const y=parseInt(cell.dataset.y,10);
+  handleCellInteraction(cell, x, y);
+}
+
+function handleBoardTouchStart(e){
+  const cell = e.target.closest('.cell');
+  if(!cell || !selectedPiece || !e.touches[0] || interactionState !== InteractionState.NONE) return;
+  const touch = e.touches[0];
+  boardCellTouchStarts.set(cell, {x: touch.clientX, y: touch.clientY});
+  handleDragStart(touch.clientX, touch.clientY);
+}
+
+function handleBoardTouchMove(e){
+  // Handle touch move for any drag operation (not just board cells)
+  // This fires when touch moves over the board area
+  // Note: handleDocumentTouchMove handles touch moves globally, this is just for board-specific handling
+  // Don't preventDefault here - let document handler do it to avoid conflicts
+  if(selectedPiece && e.touches && e.touches[0]){
+    // Only handle if we're in a drag state (started from palette or board)
+    if(interactionState === InteractionState.DRAGGING || interactionState === InteractionState.SELECTING){
+      const touch = e.touches[0];
+      handleDragMove(touch.clientX, touch.clientY);
+      // Don't preventDefault - document handler will do it
+    }
+  }
+}
+
+function handleBoardTouchEnd(e){
+  const cell = e.target.closest('.cell');
+  if(!cell || !selectedPiece || !e.changedTouches || !e.changedTouches[0]) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const touch = e.changedTouches[0];
+  const touchStart = boardCellTouchStarts.get(cell);
+  const wasTap = touchStart && isTapMovement(touchStart.x, touchStart.y, touch.clientX, touch.clientY, 10);
+  
+  // If in preview mode, handle directly as cell interaction
+  if(isPreviewing()){
+    const x=parseInt(cell.dataset.x,10);
+    const y=parseInt(cell.dataset.y,10);
+    handleCellInteraction(cell, x, y);
+    boardCellTouchStarts.delete(cell);
+    return;
+  }
+  
+  // Otherwise, handle as drag/tap
+  const result = handleDragEnd(touch.clientX, touch.clientY);
+  if(result){
+    if(result.type === 'drag' && result.cell){
+      handlePlacement(result.cell, result.x, result.y);
+    } else if(wasTap && result.type === 'tap'){
+      const x=parseInt(cell.dataset.x,10);
+      const y=parseInt(cell.dataset.y,10);
+      handleCellInteraction(cell, x, y);
+    }
+  }
+  boardCellTouchStarts.delete(cell);
+}
+
+function handleBoardTouchCancel(e){
+  const cell = e.target.closest('.cell');
+  if(cell) boardCellTouchStarts.delete(cell);
+  interactionState = InteractionState.NONE;
+  hoveringCell = null;
+  setPreviewMode(false);
+  previewCell = null;
+  clearGhost();
 }
 
 // Convert piece cells to 5x5 grid positions (normalized and centered)
@@ -639,6 +670,7 @@ function pieceToGrid(piece){
 // --- RENDER PALETTE (click to select, then drag) ---
 function renderPalette(){
   paletteEl.innerHTML='';
+  cachedPieceElements = []; // Reset cache
   PIECES.forEach(piece=>{
     const wrapper=document.createElement('div');
     wrapper.className='piece';
@@ -693,8 +725,12 @@ function renderPalette(){
       }
       
       // Otherwise, select this piece
-      // Deselect other pieces
-      document.querySelectorAll('.piece').forEach(p=>p.classList.remove('selected'));
+      // Deselect other pieces (use cached if available)
+      if(cachedPieceElements){
+        cachedPieceElements.forEach(p=>p.classList.remove('selected'));
+      } else {
+        document.querySelectorAll('.piece').forEach(p=>p.classList.remove('selected'));
+      }
       // Clear preview mode when selecting new piece
       setPreviewMode(false);
       previewCell = null;
@@ -753,11 +789,14 @@ function renderPalette(){
     }, {passive: false});
     
     wrapper.addEventListener('touchmove',(e)=>{
+      // Only handle if this piece started the drag
       if(touchStartedOnThisPiece && selectedPiece && touchStartPos && e.touches[0]){
         const touch = e.touches[0];
+        // Call handleDragMove but don't preventDefault - let document handler do it
+        // This ensures document handler can also process the event globally
         handleDragMove(touch.clientX, touch.clientY);
       }
-      e.preventDefault();
+      // Don't preventDefault here - document handler will handle it globally
     }, {passive: false});
     
     wrapper.addEventListener('touchend', (e)=>{
@@ -833,6 +872,7 @@ function renderPalette(){
     });
 
     paletteEl.appendChild(wrapper);
+    cachedPieceElements.push(wrapper); // Cache piece element
   });
 }
 
@@ -994,35 +1034,16 @@ function handlePlacement(cellEl, x, y){
   if(!selectedPiece || isPlacing) return;
   isPlacing = true; // Prevent duplicate calls
   
-  const currentCells = getCurrentOrientation();
-  if(!currentCells || currentCells.length === 0) {
-    isPlacing = false;
-    return;
-  }
+  // Use placement cache instead of recalculating
+  const orientationKey = orientationToKey(getCurrentOrientation());
+  const placed = placementCache[selectedPiece.id]?.[orientationKey]?.[y]?.[x];
   
-  const minX=Math.min(...currentCells.map(c=>c[0]));
-  const minY=Math.min(...currentCells.map(c=>c[1]));
-  const maxX=Math.max(...currentCells.map(c=>c[0]));
-  const maxY=Math.max(...currentCells.map(c=>c[1]));
-  
-  // Calculate initial placement
-  let placed = currentCells.map(([cx,cy])=>[x+(cx-minX), y+(cy-minY)]);
-  
-  // Adjust placement if it would go out of bounds
-  if(!isInsideBoard(placed)){
-    // Try to adjust
-    if(x + maxX >= SIZE) x = SIZE - 1 - maxX;
-    if(y + maxY >= SIZE) y = SIZE - 1 - maxY;
-    if(x < 0) x = 0;
-    if(y < 0) y = 0;
-    placed = currentCells.map(([cx,cy])=>[x+(cx-minX), y+(cy-minY)]);
-  }
-
-  if(!isInsideBoard(placed)){ 
+  if(!placed) {
     isPlacing = false; // Reset guard on failure
     showToast('Outside board'); 
     return; 
   }
+
   if(!isEmpty(placed)){ 
     isPlacing = false; // Reset guard on failure
     showToast('Collides with existing piece'); 
@@ -1038,13 +1059,20 @@ function handlePlacement(cellEl, x, y){
   usedPieces[currentPlayer].add(selectedPiece.id);
   history.push({player:currentPlayer,placed,pid:selectedPiece.id});
 
+  // Invalidate valid moves cache for all players (board changed)
+  PLAYERS.forEach(p => validMovesCache[p.id] = undefined);
+
   selectedPiece=null;selectedOrientation.index=0;selectedPieceElement=null;
   setDragging(false);
   setPreviewMode(false);
   previewCell = null;
   clearGhost();
-  // Deselect piece
-  document.querySelectorAll('.piece').forEach(p=>p.classList.remove('selected'));
+  // Deselect piece (use cached if available)
+  if(cachedPieceElements){
+    cachedPieceElements.forEach(p=>p.classList.remove('selected'));
+  } else {
+    document.querySelectorAll('.piece').forEach(p=>p.classList.remove('selected'));
+  }
   isPlacing = false; // Reset guard
   nextTurn();renderBoard();renderPalette();
 }
@@ -1087,11 +1115,19 @@ function validBlokusContact(cells,player){
   return hasCorner;
 }
 
-// Check if a player has any valid moves
+// Check if a player has any valid moves (with caching)
 function hasValidMoves(player){
+  // Check cache first
+  if(validMovesCache[player] !== undefined){
+    return validMovesCache[player];
+  }
+  
   // Get all unused pieces for this player
   const unusedPieces = PIECES.filter(p => !usedPieces[player].has(p.id));
-  if(unusedPieces.length === 0) return false;
+  if(unusedPieces.length === 0) {
+    validMovesCache[player] = false;
+    return false;
+  }
   
   // For each unused piece, try all precomputed orientations at all positions
   for(const piece of unusedPieces){
@@ -1100,19 +1136,20 @@ function hasValidMoves(player){
     
     // Try each orientation at every position on the board
     for(const orientation of orientations){
-      const minX = Math.min(...orientation.map(c => c[0]));
-      const minY = Math.min(...orientation.map(c => c[1]));
-      const maxX = Math.max(...orientation.map(c => c[0]));
-      const maxY = Math.max(...orientation.map(c => c[1]));
+      const orientationKey = orientationToKey(orientation);
+      const bbox = boundingBoxCache[piece.id]?.[orientationKey];
+      if(!bbox) continue; // Skip if no bounding box cached
       
-      // Try placing at every position
+      // Try placing at every position using placement cache
       for(let y = 0; y < SIZE; y++){
         for(let x = 0; x < SIZE; x++){
-          // Calculate placement
-          const placed = orientation.map(([cx, cy]) => [x + (cx - minX), y + (cy - minY)]);
+          // Use precomputed placement from cache
+          const placed = placementCache[piece.id]?.[orientationKey]?.[y]?.[x];
+          if(!placed) continue; // Skip invalid placements
           
-          // Check if valid
-          if(isInsideBoard(placed) && isEmpty(placed) && validBlokusContact(placed, player)){
+          // Check if valid (placement already adjusted and inside board)
+          if(isEmpty(placed) && validBlokusContact(placed, player)){
+            validMovesCache[player] = true;
             return true; // Found at least one valid move
           }
         }
@@ -1120,6 +1157,7 @@ function hasValidMoves(player){
     }
   }
   
+  validMovesCache[player] = false;
   return false; // No valid moves found
 }
 
