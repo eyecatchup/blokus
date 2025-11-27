@@ -334,7 +334,8 @@ const UI = (function() {
         } else {
           document.querySelectorAll('.piece').forEach(p => p.classList.remove('selected'));
         }
-        setPreviewMode(false, app);
+        // Reset interaction state completely when selecting a new piece
+        app.interactionState = app.interaction.InteractionState.NONE;
         app.previewCell = null;
         clearGhost();
         wrapper.classList.add('selected');

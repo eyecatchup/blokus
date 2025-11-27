@@ -46,6 +46,7 @@ const Interaction = (function() {
     } else {
       if(app.interactionState === InteractionState.PREVIEWING){
         app.interactionState = InteractionState.NONE;
+        app._previewEnterTime = null;
       }
     }
   }
@@ -133,16 +134,29 @@ const Interaction = (function() {
   function handleCellInteraction(cellEl, x, y, app) {
     if(!app.selectedPiece || isDragging(app.interactionState)) return;
     
+    // Check if previewCell is still in the document (it might have been removed during board re-render)
+    if(app.previewCell && !document.body.contains(app.previewCell)){
+      app.previewCell = null;
+      setPreviewMode(false, app);
+    }
+    
     // Check if we're in preview mode and clicking the same cell (by coordinates)
+    // Only allow placement if we've been in preview mode for at least a short time
+    // This prevents immediate placement when both touch and click events fire
     if(isPreviewing(app.interactionState) && app.previewCell){
       const previewX = parseInt(app.previewCell.dataset.x, 10);
       const previewY = parseInt(app.previewCell.dataset.y, 10);
       
+      // Check if enough time has passed since entering preview mode
+      const timeSincePreview = app._previewEnterTime ? (Date.now() - app._previewEnterTime) : Infinity;
+      const canPlace = timeSincePreview > 100; // Require at least 100ms in preview mode
+      
       // If same cell (by coordinates) or same element, confirm placement
-      if((previewX === x && previewY === y) || app.previewCell === cellEl){
+      if(canPlace && ((previewX === x && previewY === y) || app.previewCell === cellEl)){
         handlePlacement(cellEl, x, y, app);
         setPreviewMode(false, app);
         app.previewCell = null;
+        app._previewEnterTime = null;
         app.ui.clearGhost();
         return;
       }
@@ -151,6 +165,7 @@ const Interaction = (function() {
     // Otherwise, enter/update preview mode
     setPreviewMode(true, app);
     app.previewCell = cellEl;
+    app._previewEnterTime = Date.now();
     app.ui.updateGhostPreview(cellEl, x, y, app);
   }
   
@@ -209,6 +224,11 @@ const Interaction = (function() {
   
   // Board event handlers
   function handleBoardClick(e, app) {
+    // Ignore click events that are triggered by touch (they fire after touchend)
+    // We track this by checking if we recently handled a touch event
+    if(app._lastTouchTime && (Date.now() - app._lastTouchTime) < 300) {
+      return;
+    }
     const cell = e.target.closest('.cell');
     if(!cell || !app.selectedPiece || isDragging(app.interactionState)) return;
     const x = parseInt(cell.dataset.x, 10);
@@ -233,7 +253,10 @@ const Interaction = (function() {
     if(app.interactionState !== InteractionState.NONE) return;
     
     boardCellTouchStarts.set(cell, {x: touch.clientX, y: touch.clientY});
-    handleDragStart(touch.clientX, touch.clientY, app);
+    // Call handleDragStart to set state to SELECTING for tap detection
+    const dragStarted = handleDragStart(touch.clientX, touch.clientY, app);
+    // If handleDragStart failed for some reason, we still track the touch start
+    // so that handleBoardTouchEnd can detect it as a tap
   }
   
   function handleBoardTouchMove(e, app) {
@@ -250,6 +273,10 @@ const Interaction = (function() {
     if(!cell || !app.selectedPiece || !e.changedTouches || !e.changedTouches[0]) return;
     e.preventDefault();
     e.stopPropagation();
+    
+    // Mark that we just handled a touch event to prevent click from firing
+    app._lastTouchTime = Date.now();
+    
     const touch = e.changedTouches[0];
     const touchStart = boardCellTouchStarts.get(cell);
     const wasTap = touchStart && isTapMovement(touchStart.x, touchStart.y, touch.clientX, touch.clientY, 10);
@@ -273,6 +300,12 @@ const Interaction = (function() {
         const y = parseInt(cell.dataset.y, 10);
         handleCellInteraction(cell, x, y, app);
       }
+    } else if(wasTap && touchStart){
+      // Fallback: if handleDragEnd returned null but we have a valid tap,
+      // treat it as a tap (this handles cases where the state wasn't set correctly)
+      const x = parseInt(cell.dataset.x, 10);
+      const y = parseInt(cell.dataset.y, 10);
+      handleCellInteraction(cell, x, y, app);
     }
     boardCellTouchStarts.delete(cell);
   }
