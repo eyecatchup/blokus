@@ -33,6 +33,8 @@ const PIECES = [
 
 // Precompute all unique orientations for each piece (performance optimization)
 const PIECE_ORIENTATIONS = new Map();
+// Precomputed placement cache: placementCache[pieceId][orientationKey][y][x] = adjustedCells[]
+const placementCache = {};
 
 function normalizeOrientation(cells){
   const minX = Math.min(...cells.map(c => c[0]));
@@ -48,11 +50,42 @@ function orientationToKey(cells){
   return cells.map(c => c.join(',')).join(';');
 }
 
-// Precompute orientations for all pieces at startup
+// Compute adjusted placement for a given orientation and board position
+// Inline isInsideBoard check since it's defined later
+function isInsideBoardInline(cells){
+  return cells.every(([x,y]) => x >= 0 && x < SIZE && y >= 0 && y < SIZE);
+}
+
+function computeAdjustedPlacement(orientation, boardX, boardY){
+  const minX = Math.min(...orientation.map(c => c[0]));
+  const minY = Math.min(...orientation.map(c => c[1]));
+  const maxX = Math.max(...orientation.map(c => c[0]));
+  const maxY = Math.max(...orientation.map(c => c[1]));
+  
+  // Calculate initial placement
+  let placed = orientation.map(([cx, cy]) => [boardX + (cx - minX), boardY + (cy - minY)]);
+  
+  // Adjust placement if it would go out of bounds
+  let adjustedX = boardX, adjustedY = boardY;
+  if(!isInsideBoardInline(placed)){
+    if(boardX + maxX >= SIZE) adjustedX = SIZE - 1 - maxX;
+    if(boardY + maxY >= SIZE) adjustedY = SIZE - 1 - maxY;
+    if(adjustedX < 0) adjustedX = 0;
+    if(adjustedY < 0) adjustedY = 0;
+    placed = orientation.map(([cx, cy]) => [adjustedX + (cx - minX), adjustedY + (cy - minY)]);
+  }
+  
+  return placed;
+}
+
+// Precompute orientations and placement cache for all pieces at startup
 PIECES.forEach(piece => {
   const orientations = [];
   const seen = new Set(); // Use Set for O(1) lookup instead of O(n) array search
   let cells = piece.cells.map(c => [c[0], c[1]]); // Start with fresh copy
+  
+  // Initialize cache for this piece
+  placementCache[piece.id] = {};
   
   // Generate all 4 rotations (0°, 90°, 180°, 270°)
   for(let rot = 0; rot < 4; rot++){
@@ -63,6 +96,19 @@ PIECES.forEach(piece => {
     if(!seen.has(key)){
       orientations.push(normalized);
       seen.add(key);
+      
+      // Precompute all adjusted placements for this orientation
+      placementCache[piece.id][key] = Array.from({length: SIZE}, () => []);
+      for(let y = 0; y < SIZE; y++){
+        placementCache[piece.id][key][y] = Array.from({length: SIZE}, () => null);
+        for(let x = 0; x < SIZE; x++){
+          const adjusted = computeAdjustedPlacement(normalized, x, y);
+          // Only store if placement is valid (inside board)
+          if(isInsideBoardInline(adjusted)){
+            placementCache[piece.id][key][y][x] = adjusted;
+          }
+        }
+      }
     }
     
     // Rotate for next iteration: (x, y) -> (y, -x)
@@ -313,6 +359,32 @@ function initCellCache(){
   );
 }
 
+// Get cell coordinates and element from client coordinates (O(1) math, no DOM queries)
+function getCellAt(clientX, clientY){
+  if(!boardEl || !cellEls || !cellEls[0] || !cellEls[0][0]) return null;
+  
+  // Get board bounding rect (cached per frame, very fast)
+  const boardRect = boardEl.getBoundingClientRect();
+  
+  // Get cell size from first cell (uniform grid, so all cells same size)
+  const cellSize = cellEls[0][0].getBoundingClientRect().width;
+  
+  // Calculate grid coordinates using simple math
+  const gx = Math.floor((clientX - boardRect.left) / cellSize);
+  const gy = Math.floor((clientY - boardRect.top) / cellSize);
+  
+  // Validate bounds
+  if(gx >= 0 && gy >= 0 && gx < SIZE && gy < SIZE && cellEls[gy] && cellEls[gy][gx]){
+    return {
+      x: gx,
+      y: gy,
+      element: cellEls[gy][gx]
+    };
+  }
+  
+  return null;
+}
+
 // --- SHARED DRAG HANDLERS (used by both mouse and touch) ---
 function handleDragStart(clientX, clientY){
   if(!selectedPiece || interactionState !== InteractionState.NONE) return false;
@@ -339,14 +411,12 @@ function handleDragMove(clientX, clientY){
   }
   
   if(interactionState === InteractionState.DRAGGING){
-    // Find which cell is under the pointer
-    const cell = document.elementFromPoint(clientX, clientY)?.closest('.cell');
-    if(cell && cell.classList.contains('cell')){
-      const x = parseInt(cell.dataset.x, 10);
-      const y = parseInt(cell.dataset.y, 10);
-      hoveringCell = {x, y};
-      lastHoveredCell = cell;
-      updateGhostPreview(cell, x, y);
+    // Find which cell is under the pointer using fast math (no DOM queries)
+    const cellInfo = getCellAt(clientX, clientY);
+    if(cellInfo){
+      hoveringCell = {x: cellInfo.x, y: cellInfo.y};
+      lastHoveredCell = cellInfo.element;
+      updateGhostPreview(cellInfo.element, cellInfo.x, cellInfo.y);
     } else {
       hoveringCell = null;
       clearGhost();
@@ -372,12 +442,10 @@ function handleDragEnd(clientX, clientY){
   }
   
   if(wasDragging){
-    // Was a drag - try to place if we have a cell
-    const cell = document.elementFromPoint(clientX, clientY)?.closest('.cell');
-    if(cell && cell.classList.contains('cell')){
-      const x = parseInt(cell.dataset.x, 10);
-      const y = parseInt(cell.dataset.y, 10);
-      return {type: 'drag', cell: cell, x: x, y: y};
+    // Was a drag - try to place if we have a cell (using fast math, no DOM queries)
+    const cellInfo = getCellAt(clientX, clientY);
+    if(cellInfo){
+      return {type: 'drag', cell: cellInfo.element, x: cellInfo.x, y: cellInfo.y};
     }
     // Try last hovered cell as fallback
     if(lastHoveredCell){
@@ -821,31 +889,18 @@ function updateGhostPreview(cellEl, x, y){
   // Clear previous ghost
   clearGhost();
   
-  // Use cached bounding box or calculate if not cached
-  if(!cachedBoundingBox){
-    updateBoundingBoxCache();
-  }
-  if(!cachedBoundingBox) return;
+  // Get orientation key for cache lookup
+  const orientationKey = orientationToKey(selectedOrientation.cells);
   
-  const {minX, minY, maxX, maxY} = cachedBoundingBox;
-  
-  // Calculate initial placement
-  let placed = selectedOrientation.cells.map(([cx,cy])=>[x+(cx-minX), y+(cy-minY)]);
-  
-  // Adjust placement if it would go out of bounds (same logic as onDrop)
-  let adjustedX = x, adjustedY = y;
-  if(!isInsideBoard(placed)){
-    if(x + maxX >= SIZE) adjustedX = SIZE - 1 - maxX;
-    if(y + maxY >= SIZE) adjustedY = SIZE - 1 - maxY;
-    if(adjustedX < 0) adjustedX = 0;
-    if(adjustedY < 0) adjustedY = 0;
-    placed = selectedOrientation.cells.map(([cx,cy])=>[adjustedX+(cx-minX), adjustedY+(cy-minY)]);
+  // Look up precomputed placement from cache (zero math, zero GC)
+  const placed = placementCache[selectedPiece.id]?.[orientationKey]?.[y]?.[x];
+  if(!placed) {
+    // No valid placement for this position
+    return;
   }
   
-  // Validate placement
-  const isLegal = isInsideBoard(placed) && 
-                  isEmpty(placed) && 
-                  validBlokusContact(placed, currentPlayer);
+  // Validate placement (still need to check board state)
+  const isLegal = isEmpty(placed) && validBlokusContact(placed, currentPlayer);
   
   const playerColor = PLAYERS[currentPlayer].color;
   

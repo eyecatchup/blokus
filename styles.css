@@ -74,6 +74,7 @@ h1 {
     flex-wrap: wrap;
     gap: 8px;
     margin-top: 8px;
+    margin-bottom: 16px;
 }
 .piece {
     width: 72px;
@@ -101,6 +102,9 @@ button {
     border: 1px solid #ddd;
     background: #fff;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }
 .footer {
     margin-top: 14px;
