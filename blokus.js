@@ -31,6 +31,50 @@ const PIECES = [
   {id:'T5b',cells:[[0,0],[1,1],[1,0],[2,0],[1,2]],name:'T5b'},
 ];
 
+// Precompute all unique orientations for each piece (performance optimization)
+const PIECE_ORIENTATIONS = new Map();
+
+function normalizeOrientation(cells){
+  const minX = Math.min(...cells.map(c => c[0]));
+  const minY = Math.min(...cells.map(c => c[1]));
+  return cells.map(([x, y]) => [x - minX, y - minY]).sort((a, b) => {
+    if(a[1] !== b[1]) return a[1] - b[1];
+    return a[0] - b[0];
+  });
+}
+
+function orientationsEqual(a, b){
+  if(a.length !== b.length) return false;
+  for(let i = 0; i < a.length; i++){
+    if(a[i][0] !== b[i][0] || a[i][1] !== b[i][1]) return false;
+  }
+  return true;
+}
+
+// Precompute orientations for all pieces at startup
+PIECES.forEach(piece => {
+  const orientations = [];
+  const seen = [];
+  let cells = piece.cells.map(c => [c[0], c[1]]);
+  
+  // Generate all 4 rotations (0°, 90°, 180°, 270°)
+  for(let rot = 0; rot < 4; rot++){
+    const normalized = normalizeOrientation(cells);
+    
+    // Check if we've seen this orientation before (deduplicate symmetric pieces)
+    const isDuplicate = seen.some(seenOrientation => orientationsEqual(seenOrientation, normalized));
+    if(!isDuplicate){
+      orientations.push(normalized);
+      seen.push(normalized);
+    }
+    
+    // Rotate for next iteration: (x, y) -> (y, -x)
+    cells = cells.map(([x, y]) => [y, -x]);
+  }
+  
+  PIECE_ORIENTATIONS.set(piece.id, orientations);
+});
+
 // --- STATE ---
 let board = [];
 let currentPlayer = 0;
@@ -702,22 +746,10 @@ function hasValidMoves(player){
   const unusedPieces = PIECES.filter(p => !usedPieces[player].has(p.id));
   if(unusedPieces.length === 0) return false;
   
-  // For each unused piece, try all rotations and all positions
+  // For each unused piece, try all precomputed orientations at all positions
   for(const piece of unusedPieces){
-    // Generate all 4 rotations (0°, 90°, 180°, 270°)
-    const orientations = [];
-    let cells = piece.cells.map(c => [c[0], c[1]]);
-    
-    for(let rot = 0; rot < 4; rot++){
-      // Normalize the orientation
-      const minX = Math.min(...cells.map(c => c[0]));
-      const minY = Math.min(...cells.map(c => c[1]));
-      const normalized = cells.map(([x, y]) => [x - minX, y - minY]);
-      orientations.push(normalized);
-      
-      // Rotate for next iteration: (x, y) -> (y, -x)
-      cells = cells.map(([x, y]) => [y, -x]);
-    }
+    const orientations = PIECE_ORIENTATIONS.get(piece.id);
+    if(!orientations) continue;
     
     // Try each orientation at every position on the board
     for(const orientation of orientations){
