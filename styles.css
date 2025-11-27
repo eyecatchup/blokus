@@ -46,6 +46,7 @@ h1 {
 
 .sidebar {
     min-width: 340px;
+    max-width: 600px;
 }
 .scores,
 .controls {
@@ -126,9 +127,6 @@ button {
     }
     body {
         padding: 12px;
-    }
-    h1 {
-        display: none;
     }
     .game {
         flex-direction: column;

@@ -2,10 +2,10 @@
 // --- CONFIG ---
 const SIZE = 20;
 const PLAYERS = [
-  {id:0,name:'Blue',color:'#3b82f6',start:[0,0]},
-  {id:1,name:'Yellow',color:'#f59e0b',start:[0,SIZE-1]},
-  {id:2,name:'Red',color:'#ef4444',start:[SIZE-1,0]},
-  {id:3,name:'Green',color:'#10b981',start:[SIZE-1,SIZE-1]}
+  {id:0,name:'Blue',color:'#3b82f6'},
+  {id:1,name:'Yellow',color:'#f59e0b'},
+  {id:2,name:'Red',color:'#ef4444'},
+  {id:3,name:'Green',color:'#10b981'}
 ];
 const PIECES = [
   {id:'I1',cells:[[0,0]],name:'I1'},
@@ -42,6 +42,8 @@ let dragging = false;
 let dragOffset = {x:0,y:0};
 let selectedPieceElement = null; // Reference to the selected piece's DOM element
 let boardCellTouchStart = null; // Track touch start on board cells to distinguish taps from drags
+let previewMode = false; // Track if we're in preview mode (ghost shown, waiting for confirmation)
+let previewCell = null; // Reference to the cell where ghost is currently shown in preview mode
 // Create a transparent drag image element to avoid overlaying the ghost preview
 const emptyDragImage = document.createElement('div');
 emptyDragImage.style.width = '1px';
@@ -72,6 +74,8 @@ function init(){
   history = [];
   dragging = false;
   boardCellTouchStart = null;
+  previewMode = false;
+  previewCell = null;
   renderBoard();
   renderPalette();
   renderScores();
@@ -184,13 +188,13 @@ function renderBoard(){
           clearGhost();
         }
       });
-      // Click handler for placing selected piece
+      // Click handler for placing selected piece (with preview mode)
       c.addEventListener('click',(e)=>{
-        // Only place if piece is selected and we're not in a drag operation
+        // Only handle if piece is selected and we're not in a drag operation
         if(selectedPiece && !dragging){
           const x=parseInt(c.dataset.x,10);
           const y=parseInt(c.dataset.y,10);
-          handlePlacement(c, x, y);
+          handleCellInteraction(c, x, y);
         }
       });
       // Touch support
@@ -226,7 +230,7 @@ function renderBoard(){
                          Math.abs(touch.clientY - boardCellTouchStart.y) <= 10);
           
           if(dragging && selectedPiece){
-            // Was a drag - place at this cell
+            // Was a drag - place at this cell immediately
             const x=parseInt(c.dataset.x,10);
             const y=parseInt(c.dataset.y,10);
             handlePlacement(c, x, y);
@@ -234,10 +238,10 @@ function renderBoard(){
             clearGhost();
             e.stopPropagation(); // Prevent board-level handler from also handling this
           } else if(wasTap && selectedPiece && !dragging){
-            // Was a tap - place at this cell
+            // Was a tap - handle with preview mode
             const x=parseInt(c.dataset.x,10);
             const y=parseInt(c.dataset.y,10);
-            handlePlacement(c, x, y);
+            handleCellInteraction(c, x, y);
             e.stopPropagation(); // Prevent board-level handler from also handling this
           }
           boardCellTouchStart = null;
@@ -246,6 +250,8 @@ function renderBoard(){
       c.addEventListener('touchcancel',()=>{
         dragging = false;
         boardCellTouchStart = null;
+        previewMode = false;
+        previewCell = null;
         clearGhost();
       });
       boardEl.appendChild(c);
@@ -312,8 +318,12 @@ function renderPalette(){
       if(selectedPieceElement === wrapper && selectedPiece && selectedOrientation.cells.length > 0){
         // Rotate the already-selected piece
         rotatePiece(selectedOrientation);
-        // Update ghost preview if we have a last hovered cell
-        if(lastHoveredCell){
+        // Update ghost preview if in preview mode or if we have a last hovered cell
+        if(previewMode && previewCell){
+          const x=parseInt(previewCell.dataset.x,10);
+          const y=parseInt(previewCell.dataset.y,10);
+          updateGhostPreview(previewCell, x, y);
+        } else if(lastHoveredCell){
           updateGhostPreview(lastHoveredCell, lastHoveredCell.dataset.x, lastHoveredCell.dataset.y);
         }
         // Update visual representation in palette
@@ -325,6 +335,10 @@ function renderPalette(){
       // Otherwise, select this piece
       // Deselect other pieces
       document.querySelectorAll('.piece').forEach(p=>p.classList.remove('selected'));
+      // Clear preview mode when selecting new piece
+      previewMode = false;
+      previewCell = null;
+      clearGhost();
       // Select this piece
       wrapper.classList.add('selected');
       selectedPiece = JSON.parse(JSON.stringify(piece));
@@ -446,6 +460,8 @@ function renderPalette(){
     wrapper.addEventListener('touchcancel',()=>{
       dragging = false;
       touchStartPos = null;
+      previewMode = false;
+      previewCell = null;
       clearGhost();
     });
 
@@ -461,7 +477,9 @@ function renderPalette(){
       e.dataTransfer.setDragImage(emptyDragImage, 0, 0);
     });
     wrapper.addEventListener('dragend',()=>{ 
-      dragging=false; 
+      dragging=false;
+      previewMode = false;
+      previewCell = null;
       clearGhost();
     });
 
@@ -529,7 +547,7 @@ function clearGhost(){
 }
 
 function updateGhostPreview(cellEl, x, y){
-  if(!dragging || !selectedPiece) {
+  if((!dragging && !previewMode) || !selectedPiece) {
     clearGhost();
     return;
   }
@@ -582,6 +600,25 @@ function onDragOver(e){
     updateGhostPreview(e.currentTarget, x, y);
   }
 }
+
+// Handle cell click/tap with preview mode
+function handleCellInteraction(cellEl, x, y){
+  if(!selectedPiece || dragging) return;
+  
+  // If already in preview mode and clicking the same cell, confirm placement
+  if(previewMode && previewCell === cellEl){
+    handlePlacement(cellEl, x, y);
+    previewMode = false;
+    previewCell = null;
+    clearGhost();
+    return;
+  }
+  
+  // Otherwise, enter preview mode or update preview position
+  previewMode = true;
+  previewCell = cellEl;
+  updateGhostPreview(cellEl, x, y);
+}
 function handlePlacement(cellEl, x, y){
   if(!selectedPiece) return;
   
@@ -614,6 +651,8 @@ function handlePlacement(cellEl, x, y){
   history.push({player:currentPlayer,placed,pid:selectedPiece.id});
 
   selectedPiece=null;selectedOrientation.cells=[];selectedPieceElement=null;dragging=false;
+  previewMode = false;
+  previewCell = null;
   clearGhost();
   // Deselect piece
   document.querySelectorAll('.piece').forEach(p=>p.classList.remove('selected'));
@@ -877,7 +916,12 @@ flipBtn.addEventListener('click',()=>{
   if(selectedPiece && selectedOrientation.cells.length > 0){
     flipPiece(selectedOrientation);
     updateSelectedPieceVisual();
-    if(lastHoveredCell){
+    // Update ghost preview if in preview mode or if we have a last hovered cell
+    if(previewMode && previewCell){
+      const x=parseInt(previewCell.dataset.x,10);
+      const y=parseInt(previewCell.dataset.y,10);
+      updateGhostPreview(previewCell, x, y);
+    } else if(lastHoveredCell){
       const x=parseInt(lastHoveredCell.dataset.x,10);
       const y=parseInt(lastHoveredCell.dataset.y,10);
       updateGhostPreview(lastHoveredCell, x, y);
@@ -888,7 +932,12 @@ rotateBtn.addEventListener('click',()=>{
   if(selectedPiece && selectedOrientation.cells.length > 0){
     rotatePiece(selectedOrientation);
     updateSelectedPieceVisual();
-    if(lastHoveredCell){
+    // Update ghost preview if in preview mode or if we have a last hovered cell
+    if(previewMode && previewCell){
+      const x=parseInt(previewCell.dataset.x,10);
+      const y=parseInt(previewCell.dataset.y,10);
+      updateGhostPreview(previewCell, x, y);
+    } else if(lastHoveredCell){
       const x=parseInt(lastHoveredCell.dataset.x,10);
       const y=parseInt(lastHoveredCell.dataset.y,10);
       updateGhostPreview(lastHoveredCell, x, y);
