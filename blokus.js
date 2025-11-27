@@ -594,26 +594,13 @@ function handlePlacement(cellEl, x, y){
   let placed = selectedOrientation.cells.map(([cx,cy])=>[x+(cx-minX), y+(cy-minY)]);
   
   // Adjust placement if it would go out of bounds
-  // But for first move, check if adjustment would break starting corner requirement
-  const start = PLAYERS[currentPlayer].start;
-  const isFirstMove = usedPieces[currentPlayer].size === 0;
-  
   if(!isInsideBoard(placed)){
     // Try to adjust
-    const origX = x, origY = y;
     if(x + maxX >= SIZE) x = SIZE - 1 - maxX;
     if(y + maxY >= SIZE) y = SIZE - 1 - maxY;
     if(x < 0) x = 0;
     if(y < 0) y = 0;
     placed = selectedOrientation.cells.map(([cx,cy])=>[x+(cx-minX), y+(cy-minY)]);
-    
-    // If first move, check if adjusted placement still includes starting corner
-    if(isFirstMove && !placed.some(([px,py])=>px===start[0]&&py===start[1])){
-      // Adjustment broke starting corner requirement, revert and let validation fail naturally
-      x = origX;
-      y = origY;
-      placed = selectedOrientation.cells.map(([cx,cy])=>[x+(cx-minX), y+(cy-minY)]);
-    }
   }
 
   if(!isInsideBoard(placed)){ alert('Outside board'); return; }
@@ -645,9 +632,15 @@ function onDrop(e){
 function isInsideBoard(cells){return cells.every(([x,y])=>x>=0&&x<SIZE&&y>=0&&y<SIZE);} 
 function isEmpty(cells){return cells.every(([x,y])=>board[y][x]===null);} 
 function validBlokusContact(cells,player){
-  const start=PLAYERS[player].start;
+  // For first move, must be placed in any corner
   if(usedPieces[player].size===0){
-    if(!cells.some(([x,y])=>x===start[0]&&y===start[1])) return false;
+    const corners = [
+      [0, 0],                    // top-left
+      [0, SIZE-1],              // bottom-left
+      [SIZE-1, 0],              // top-right
+      [SIZE-1, SIZE-1]          // bottom-right
+    ];
+    if(!cells.some(([x,y])=>corners.some(([cx,cy])=>x===cx&&y===cy))) return false;
   }
   let hasCorner=false;
   for(const [x,y] of cells){
