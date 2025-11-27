@@ -2,7 +2,7 @@
 
 Play in your (mobile) browser: https://eyecatchup.github.io/blokus/
 
-# The “free-corner” vs “assigned-corner” ambiguity
+## The “free-corner” vs “assigned-corner” ambiguity
 
 The official Mattel rules (and every major digital version: the official app, Board Game Arena, etc.) allow each player’s first piece to cover any one of the four corners. There are no assigned starting corners by color.
 
