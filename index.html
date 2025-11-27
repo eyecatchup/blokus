@@ -52,7 +52,7 @@
   }
 
   .sidebar {
-    width: 340px
+    min-width: 340px
   }
   .controls {
     background: #fff;
@@ -150,19 +150,22 @@
     }
   }
   .buttons {
+    margin-top: 8px;
     display: flex;
     gap: 8px;
     align-items: center;
     margin-bottom: 8px;
+    justify-content: center;
   }
 </style>
 </head>
 <body>
   <h1>Blokus-Web</h1>
-<div class="buttons"><button id="passBtn">Pass</button> <button id="undoBtn">Undo</button> <button id="restartBtn">Restart</button></div>
+
 <div class="game">
   <div>
     <div id="board" class="board" tabindex="0" aria-label="Blokus board"></div>
+    <div class="buttons"><button id="restartBtn">Restart</button> <button id="undoBtn">Undo</button> <button id="passBtn">Pass</button> <button id="flipBtn">Flip</button> <button id="rotateBtn">Rotate</button></div>
   </div>
   <div class="sidebar">
     <div class="controls">
@@ -227,6 +230,8 @@ document.body.appendChild(emptyDragImage);
 
 const boardEl = document.getElementById('board');
 const paletteEl = document.getElementById('palette');
+const flipBtn = document.getElementById('flipBtn');
+const rotateBtn = document.getElementById('rotateBtn');
 const passBtn = document.getElementById('passBtn');
 const undoBtn = document.getElementById('undoBtn');
 const restartBtn = document.getElementById('restartBtn');
@@ -860,6 +865,15 @@ function rotatePiece(orientation){
   orientation.cells = rotated.map(([x,y])=>[x-minX, y-minY]);
 }
 
+function flipPiece(orientation){
+  // Flip horizontally: (x, y) -> (-x, y)
+  const flipped = orientation.cells.map(([x,y])=>[-x, y]);
+  // Normalize: shift so minX=0, minY=0
+  const minX = Math.min(...flipped.map(c=>c[0]));
+  const minY = Math.min(...flipped.map(c=>c[1]));
+  orientation.cells = flipped.map(([x,y])=>[x-minX, y-minY]);
+}
+
 function updateSelectedPieceVisual(){
   if(!selectedPieceElement || !selectedOrientation.cells.length) return;
   const grid = selectedPieceElement.querySelector('div[style*="grid"]');
@@ -912,6 +926,28 @@ function undo(){
   usedPieces[last.player].delete(last.pid);
   currentPlayer=last.player;renderBoard();renderPalette();
 }
+flipBtn.addEventListener('click',()=>{
+  if(selectedPiece && selectedOrientation.cells.length > 0){
+    flipPiece(selectedOrientation);
+    updateSelectedPieceVisual();
+    if(lastHoveredCell){
+      const x=parseInt(lastHoveredCell.dataset.x,10);
+      const y=parseInt(lastHoveredCell.dataset.y,10);
+      updateGhostPreview(lastHoveredCell, x, y);
+    }
+  }
+});
+rotateBtn.addEventListener('click',()=>{
+  if(selectedPiece && selectedOrientation.cells.length > 0){
+    rotatePiece(selectedOrientation);
+    updateSelectedPieceVisual();
+    if(lastHoveredCell){
+      const x=parseInt(lastHoveredCell.dataset.x,10);
+      const y=parseInt(lastHoveredCell.dataset.y,10);
+      updateGhostPreview(lastHoveredCell, x, y);
+    }
+  }
+});
 passBtn.addEventListener('click',()=>{history.push({player:currentPlayer,pass:true});nextTurn();renderPalette();});
 undoBtn.addEventListener('click',()=>{undo();});
 restartBtn.addEventListener('click',()=>{if(confirm('Restart?')) init();});
