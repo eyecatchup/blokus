@@ -100,12 +100,126 @@ document.body.appendChild(emptyDragImage);
 const boardEl = document.getElementById('board');
 const paletteEl = document.getElementById('palette');
 const scoresEl = document.getElementById('scores');
+const toastContainer = document.getElementById('toast-container');
 const flipBtn = document.getElementById('flipBtn');
 const rotateBtn = document.getElementById('rotateBtn');
 const passBtn = document.getElementById('passBtn');
 const undoBtn = document.getElementById('undoBtn');
 const restartBtn = document.getElementById('restartBtn');
 const endGameBtn = document.getElementById('endGameBtn');
+
+// --- TOAST NOTIFICATIONS ---
+function showToast(message){
+  if(!toastContainer) return;
+  
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+  
+  // Remove toast after animation completes (3 seconds total)
+  setTimeout(() => {
+    toast.remove();
+  }, 3000);
+}
+
+// --- DYNAMIC BOARD SCALING ---
+function resizeBoard(){
+  if(!boardEl) return;
+  
+  const root = document.documentElement;
+  const minCellSize = 13; // Very small mobile
+  const maxCellSize = 28; // Desktop
+  
+  // Get viewport dimensions
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  
+  // Check if we're in mobile layout (sidebar stacked vertically)
+  const isMobile = window.matchMedia('(max-width: 768px)').matches;
+  
+  let availableWidth;
+  let availableHeight;
+  
+  if(isMobile){
+    // Mobile: board takes full width minus padding
+    const bodyPadding = window.getComputedStyle(document.body).paddingLeft;
+    const padding = parseFloat(bodyPadding) || 12;
+    availableWidth = viewportWidth - (padding * 2);
+    
+    // Account for header, footer, and padding
+    const header = document.querySelector('h1');
+    const footer = document.querySelector('.footer.show-mobile');
+    const headerHeight = header ? header.offsetHeight + 12 : 30; // h1 + margin
+    const footerHeight = footer ? footer.offsetHeight + 14 : 0; // footer + margin
+    const bodyPaddingTop = parseFloat(window.getComputedStyle(document.body).paddingTop) || 12;
+    const bodyPaddingBottom = parseFloat(window.getComputedStyle(document.body).paddingBottom) || 12;
+    availableHeight = viewportHeight - headerHeight - footerHeight - bodyPaddingTop - bodyPaddingBottom;
+  } else {
+    // Desktop: account for sidebar, gap, and padding
+    const sidebar = document.querySelector('.sidebar');
+    const sidebarWidth = sidebar ? sidebar.offsetWidth : 340;
+    const gap = 18; // gap between board and sidebar
+    const bodyPadding = window.getComputedStyle(document.body).paddingLeft;
+    const padding = parseFloat(bodyPadding) || 18;
+    
+    availableWidth = viewportWidth - sidebarWidth - gap - (padding * 2);
+    
+    // Account for header and padding
+    const header = document.querySelector('h1');
+    const headerHeight = header ? header.offsetHeight + 12 : 30; // h1 + margin
+    const bodyPaddingTop = parseFloat(window.getComputedStyle(document.body).paddingTop) || 18;
+    const bodyPaddingBottom = parseFloat(window.getComputedStyle(document.body).paddingBottom) || 18;
+    availableHeight = viewportHeight - headerHeight - bodyPaddingTop - bodyPaddingBottom;
+  }
+  
+  // Account for board border (4px * 2) and padding (6px * 2)
+  const boardPadding = 6 * 2;
+  const boardBorder = 4 * 2;
+  const boardOverhead = boardPadding + boardBorder;
+  
+  // Calculate optimal cell size based on both width and height
+  // Use the smaller dimension to ensure board stays square
+  const cellSizeFromWidth = (availableWidth - boardOverhead) / SIZE;
+  const cellSizeFromHeight = (availableHeight - boardOverhead) / SIZE;
+  const calculatedCellSize = Math.min(cellSizeFromWidth, cellSizeFromHeight);
+  
+  // Clamp between min and max
+  const cellSize = Math.max(minCellSize, Math.min(maxCellSize, calculatedCellSize));
+  
+  // Calculate actual board size
+  const boardSize = (cellSize * SIZE) + boardOverhead;
+  
+  // Update CSS variable
+  root.style.setProperty('--cell', `${cellSize}px`);
+  
+  // Set max-width on board to ensure it stays square
+  boardEl.style.maxWidth = `${boardSize}px`;
+  boardEl.style.maxHeight = `${boardSize}px`;
+  
+  // Set same max-width on instructions element
+  const instructionsEl = document.getElementById('instructions');
+  if(instructionsEl){
+    instructionsEl.style.maxWidth = `${boardSize}px`;
+  }
+}
+
+// Debounce resize handler
+let resizeTimeout;
+function handleResize(){
+  clearTimeout(resizeTimeout);
+  resizeTimeout = setTimeout(() => {
+    resizeBoard();
+  }, 100);
+}
+
+// Update board border color to match current player
+function updateBoardBorder(){
+  if(!boardEl) return;
+  const root = document.documentElement;
+  const playerColor = PLAYERS[currentPlayer].color;
+  root.style.setProperty('--board-border-color', playerColor);
+}
 
 // --- INIT ---
 function init(){
@@ -120,9 +234,11 @@ function init(){
   boardCellTouchStart = null;
   previewMode = false;
   previewCell = null;
+  updateBoardBorder();
   renderBoard();
   renderPalette();
   renderScores();
+  resizeBoard();
   // Board-level touchmove handler to track touches across cells (only add once)
   boardEl.removeEventListener('touchmove', handleBoardTouchMove);
   boardEl.addEventListener('touchmove', handleBoardTouchMove, {passive: false});
@@ -684,10 +800,10 @@ function handlePlacement(cellEl, x, y){
     placed = selectedOrientation.cells.map(([cx,cy])=>[x+(cx-minX), y+(cy-minY)]);
   }
 
-  if(!isInsideBoard(placed)){ alert('Outside board'); return; }
-  if(!isEmpty(placed)){ alert('Collides'); return; }
+  if(!isInsideBoard(placed)){ showToast('Outside board'); return; }
+  if(!isEmpty(placed)){ showToast('Collides with existing piece'); return; }
   if(!validBlokusContact(placed,currentPlayer)){
-    alert('Invalid Blokus placement'); return;
+    showToast('Invalid Blokus placement'); return;
   }
 
   placed.forEach(([px,py])=>board[py][px]={player:currentPlayer});
@@ -852,13 +968,16 @@ function nextTurn(){
   // Skip players with no valid moves
   while(!hasValidMoves(currentPlayer) && attempts < PLAYERS.length){
     const playerName = PLAYERS[currentPlayer].name;
-    alert(`Player ${playerName} has no more valid options.`);
+    showToast(`Player ${playerName} has no more valid options.`);
     currentPlayer = (currentPlayer + 1) % PLAYERS.length;
     attempts++;
   }
   
   // Log scores after each turn
   logPlayerScores();
+  
+  // Update board border color for new current player
+  updateBoardBorder();
   
   // Update scores display
   renderScores();
@@ -939,10 +1058,10 @@ window.addEventListener('keydown',e=>{
 });
 function undo(){
   const last=history.pop();if(!last){alert('No moves');return;}
-  if(last.pass){currentPlayer=last.player;renderPalette();renderScores();return;}
+  if(last.pass){currentPlayer=last.player;updateBoardBorder();renderPalette();renderScores();return;}
   last.placed.forEach(([x,y])=>board[y][x]=null);
   usedPieces[last.player].delete(last.pid);
-  currentPlayer=last.player;renderBoard();renderPalette();renderScores();
+  currentPlayer=last.player;updateBoardBorder();renderBoard();renderPalette();renderScores();
 }
 flipBtn.addEventListener('click',()=>{
   if(selectedPiece && selectedOrientation.cells.length > 0){
@@ -981,4 +1100,32 @@ undoBtn.addEventListener('click',()=>{undo();});
 restartBtn.addEventListener('click',()=>{if(confirm('Restart?')) init();});
 endGameBtn.addEventListener('click',()=>{if(confirm('End game and calculate scores?')) endGame();});
 
+// Setup resize handler
+window.addEventListener('resize', handleResize);
+// Also handle orientation changes on mobile devices
+window.addEventListener('orientationchange', () => {
+  // Delay slightly to allow viewport to update
+  setTimeout(() => {
+    resizeBoard();
+  }, 100);
+});
+
+// Initialize game
 init();
+
+// Ensure board scaling runs after DOM is fully loaded and laid out
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', () => {
+    // Use requestAnimationFrame to ensure layout is complete
+    requestAnimationFrame(() => {
+      resizeBoard();
+    });
+  });
+} else {
+  // DOM already loaded, but ensure layout is complete
+  requestAnimationFrame(() => {
+    resizeBoard();
+    // Also call after a short delay to catch any late layout changes
+    setTimeout(resizeBoard, 100);
+  });
+}
