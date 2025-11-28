@@ -1232,6 +1232,33 @@ function logPlayerScores(){
 }
 
 function nextTurn(){ 
+  // Check how many players have valid moves BEFORE advancing
+  const playersWithValidMoves = PLAYERS.filter(p => hasValidMoves(p.id));
+  const validMoveCount = playersWithValidMoves.length;
+  
+  // If only one player has valid moves, stop turning and show toast
+  if(validMoveCount === 1){
+    const remainingPlayer = playersWithValidMoves[0];
+    showToast(`Player ${remainingPlayer.name} is the only player left with valid moves.`);
+    // Don't advance currentPlayer, just update UI for current player
+    logPlayerScores();
+    updateBoardBorder();
+    renderScores();
+    return;
+  }
+  
+  // If no players have valid moves, end game (don't show new toast, don't advance)
+  if(validMoveCount === 0){
+    // No players have valid moves - game over, calculate scores
+    endGame();
+    // Don't advance currentPlayer
+    logPlayerScores();
+    updateBoardBorder();
+    renderScores();
+    return;
+  }
+  
+  // Normal turn advancement (2+ players still have valid moves)
   const startPlayer = currentPlayer;
   let attempts = 0;
   
@@ -1254,15 +1281,6 @@ function nextTurn(){
   
   // Update scores display
   renderScores();
-  
-  // Check for game end: no players have valid moves
-  const playersWithValidMoves = PLAYERS.filter(p => hasValidMoves(p.id));
-  const validMoveCount = playersWithValidMoves.length;
-  
-  if(validMoveCount === 0){
-    // No players have valid moves - game over, calculate scores
-    endGame();
-  }
 }
 
 // --- ROTATION / FLIP ---
