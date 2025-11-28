@@ -1,4 +1,3 @@
-// Drag-and-drop enabled version
 // --- CONFIG ---
 const SIZE = 20;
 const PLAYERS = [
@@ -217,6 +216,7 @@ const passBtn = document.getElementById('passBtn');
 const undoBtn = document.getElementById('undoBtn');
 const restartBtn = document.getElementById('restartBtn');
 const endGameBtn = document.getElementById('endGameBtn');
+const showHintBtn = document.getElementById('showHintBtn');
 
 // --- TOAST NOTIFICATIONS ---
 function showToast(message){
@@ -1116,9 +1116,9 @@ function validBlokusContact(cells,player){
 }
 
 // Check if a player has any valid moves (with caching)
-function hasValidMoves(player){
-  // Check cache first
-  if(validMovesCache[player] !== undefined){
+function hasValidMoves(player, returnHint = false){
+  // If returning hint, bypass cache to get actual hint string
+  if(!returnHint && validMovesCache[player] !== undefined){
     return validMovesCache[player];
   }
   
@@ -1126,6 +1126,7 @@ function hasValidMoves(player){
   const unusedPieces = PIECES.filter(p => !usedPieces[player].has(p.id));
   if(unusedPieces.length === 0) {
     validMovesCache[player] = false;
+    if(returnHint) return `Player ${PLAYERS[player].name} has no more pieces available`;
     return false;
   }
   
@@ -1149,8 +1150,10 @@ function hasValidMoves(player){
           
           // Check if valid (placement already adjusted and inside board)
           if(isEmpty(placed) && validBlokusContact(placed, player)){
-            validMovesCache[player] = true;
-            return true; // Found at least one valid move
+            validMovesCache[player] = true; // Found at least one valid move
+            const hint = `${PLAYERS[player].name} can place piece ${piece.name} at position (${x}, ${y})`;
+            if (returnHint) return hint;
+            return true;
           }
         }
       }
@@ -1158,6 +1161,7 @@ function hasValidMoves(player){
   }
   
   validMovesCache[player] = false;
+  if(returnHint) return `Player ${PLAYERS[player].name} has no valid moves available`;
   return false; // No valid moves found
 }
 
@@ -1364,6 +1368,10 @@ passBtn.addEventListener('click',()=>{history.push({player:currentPlayer,pass:tr
 undoBtn.addEventListener('click',()=>{undo();});
 restartBtn.addEventListener('click',()=>{if(confirm('Restart?')) init();});
 endGameBtn.addEventListener('click',()=>{if(confirm('End game and calculate scores?')) endGame();});
+showHintBtn.addEventListener('click',()=>{
+  const hint = hasValidMoves(currentPlayer, true);
+  showToast(hint);
+});
 
 // Setup resize handler
 window.addEventListener('resize', handleResize);
