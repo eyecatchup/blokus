@@ -2,13 +2,17 @@
 
 Play in your (mobile) browser: https://eyecatchup.github.io/blokus/
 
-## The “free-corner” vs “assigned-corner” ambiguity
+## Clarifying the “Free-Corner” vs. “Assigned-Corner” Rule
 
-The official Mattel rules (and every major digital version: the official app, Board Game Arena, etc.) allow each player’s first piece to cover any one of the four corners. There are no assigned starting corners by color.
+According to the official Mattel rules—as well as major digital implementations such as the official app and Board Game Arena—each player may place their first piece on any of the four board corners. Starting corners are not tied to specific colors.
 
-In many published or shared versions, though, the corners are de facto assigned to colors (so players are not “free to choose”). Blue starts at (0,0), Yellow (0,19), Red (19,0), Green (19,19). 
+However, many unofficial or community implementations assume fixed color–corner assignments (so players are not “free to choose”): Blue starts at (0,0), Yellow (0,19), Red (19,0), Green (19,19). 
 
-My version follows the official Mattel rules.
+This project follows the official Mattel rules, allowing players to freely choose their starting corner.
+
+## Credits
+
+The game uses icons from: https://www.svgrepo.com/collection/zwicon-line-icons/.
 
 ## License
 
