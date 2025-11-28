@@ -2,7 +2,7 @@
   "name": "Blokus Online",
   "short_name": "Blokus",
   "description": "Play Blokus online - a strategy board game",
-  "start_url": "/",
+  "start_url": "/blokus/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#3b82f6",
