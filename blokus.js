@@ -217,6 +217,7 @@ const undoBtn = document.getElementById('undoBtn');
 const restartBtn = document.getElementById('restartBtn');
 const endGameBtn = document.getElementById('endGameBtn');
 const showHintBtn = document.getElementById('showHintBtn');
+const autoMoveBtn = document.getElementById('autoMoveBtn');
 
 // --- TOAST NOTIFICATIONS ---
 function showToast(message){
@@ -1338,6 +1339,105 @@ function updateSelectedPieceVisual(){
   });
 }
 
+// --- AUTO-MOVE ---
+
+// Find the first valid move for a player
+function findValidMove(player){
+  // Get all unused pieces for this player
+  const unusedPieces = PIECES.filter(p => !usedPieces[player].has(p.id));
+  if(unusedPieces.length === 0) return null;
+  
+  // Shuffle pieces to randomize selection
+  const shuffledPieces = [...unusedPieces];
+  for(let i = shuffledPieces.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffledPieces[i], shuffledPieces[j]] = [shuffledPieces[j], shuffledPieces[i]];
+  }
+  
+  // For each unused piece, try all precomputed orientations at all positions
+  for(const piece of shuffledPieces){
+    const orientations = PIECE_ORIENTATIONS.get(piece.id);
+    if(!orientations) continue;
+    
+    // Try each orientation at every position on the board
+    for(let orientIndex = 0; orientIndex < orientations.length; orientIndex++){
+      const orientation = orientations[orientIndex];
+      const orientationKey = orientationToKey(orientation);
+      
+      // Try placing at every position using placement cache
+      for(let y = 0; y < SIZE; y++){
+        for(let x = 0; x < SIZE; x++){
+          // Use precomputed placement from cache
+          const placed = placementCache[piece.id]?.[orientationKey]?.[y]?.[x];
+          if(!placed) continue; // Skip invalid placements
+          
+          // Check if valid (placement already adjusted and inside board)
+          if(isEmpty(placed) && validBlokusContact(placed, player)){
+            return {piece, orientationIndex: orientIndex, x, y, placed};
+          }
+        }
+      }
+    }
+  }
+  
+  return null; // No valid move found
+}
+
+// Execute a single auto-move for the current player
+function executeAutoMove(){
+  if(!hasValidMoves(currentPlayer)){
+    // Current player has no valid moves - pass
+    history.push({player: currentPlayer, pass: true});
+    nextTurn();
+    renderPalette();
+    return false; // Continue auto-moving
+  }
+  
+  const move = findValidMove(currentPlayer);
+  if(!move) return false; // No move found, should not happen if hasValidMoves is true
+  
+  // Select the piece
+  const pieceElement = cachedPieceElements?.find(el => el.dataset.pid === move.piece.id);
+  if(!pieceElement) return false;
+  
+  // Clear previous selection
+  if(cachedPieceElements){
+    cachedPieceElements.forEach(p=>p.classList.remove('selected'));
+  }
+  
+  // Select this piece
+  pieceElement.classList.add('selected');
+  selectedPiece = JSON.parse(JSON.stringify(move.piece));
+  selectedOrientation.index = move.orientationIndex;
+  selectedPieceElement = pieceElement;
+  cachedBoundingBox = null;
+  
+  // Update visual
+  updateSelectedPieceVisual();
+  
+  // Get the cell element for placement
+  const cellEl = cellEls?.[move.y]?.[move.x];
+  if(!cellEl) return false;
+  
+  // Place the piece
+  handlePlacement(cellEl, move.x, move.y);
+  
+  return true; // Move executed successfully
+}
+
+// Execute a single auto-move
+function makeAutoMove(){
+  // Check if game should end
+  const playersWithValidMoves = PLAYERS.filter(p => hasValidMoves(p.id));
+  if(playersWithValidMoves.length === 0){
+    // Game already over, do nothing
+    return;
+  }
+  
+  // Execute move for current player
+  executeAutoMove();
+}
+
 // --- UNDO, PASS, RESTART ---
 let lastHoveredCell = null;
 window.addEventListener('keydown',e=>{
@@ -1389,6 +1489,9 @@ endGameBtn.addEventListener('click',()=>{if(confirm('End game and calculate scor
 showHintBtn.addEventListener('click',()=>{
   const hint = hasValidMoves(currentPlayer, true);
   showToast(hint);
+});
+autoMoveBtn.addEventListener('click',()=>{
+  makeAutoMove();
 });
 
 // Setup resize handler
