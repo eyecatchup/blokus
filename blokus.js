@@ -1236,11 +1236,11 @@ function nextTurn(){
   const playersWithValidMoves = PLAYERS.filter(p => hasValidMoves(p.id));
   const validMoveCount = playersWithValidMoves.length;
   
-  // If only one player has valid moves, stop turning and show toast
+  // If only one player has valid moves, switch to that player so they can place final pieces
   if(validMoveCount === 1){
     const remainingPlayer = playersWithValidMoves[0];
+    currentPlayer = remainingPlayer.id; // Switch to the remaining player
     showToast(`Player ${remainingPlayer.name} is the only player left with valid moves.`);
-    // Don't advance currentPlayer, just update UI for current player
     logPlayerScores();
     updateBoardBorder();
     renderScores();
