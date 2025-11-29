@@ -1,24 +1,27 @@
 # Blokus Online Version
 
-Play in your (mobile) browser: https://eyecatchup.github.io/blokus/
+Play in your browser: https://eyecatchup.github.io/blokus/
+
+Pro tip for mobile users: Use "Add to homescreen" to install as app and gain more screen space.
 
 ## Implementation Details
 
 - 🧩 **100% Blokus gameplay**
   - All official Blokus rules implemented - plus tiebraker handling
   - All 21 official Blokus pieces included
+- ✨ **Features**
+  - Undo support with full move history
+  - Get a Hint
+  - Auto-move
 - 📱 **Mobile-optimized UX**
   - Custom drag handling with threshold detection
   - Alternative for drag-and-drop: Tap-to-preview mode (click once → preview, click again → place)
   - Responsive layout with dynamic board scaling
+  - Installable web-app for more screen space
 - ⚡️ **Performance-optimized for smooth game-play - even on low-end device**
   - Precomputing all possible orientations + all valid placements for every piece at startup
   - O(1) placement lookup during drag
   - Using 2D array for direct DOM access instead of querySelector during ghost preview = buttery smooth on mobile
-- ✨ **Extras**
-  - Undo support with full move history
-  - Hint feature
-  - Auto-move (random valid move)
 
 ## Scoring Rules
 
