@@ -1813,7 +1813,7 @@ rotateBtn.addEventListener('click',()=>{
 });
 passBtn.addEventListener('click',()=>{history.push({player:currentPlayer,pass:true});nextTurn();renderPalette();});
 undoBtn.addEventListener('click',()=>{undo();});
-restartBtn.addEventListener('click',async ()=>{if(await customConfirm('Restart?', 'Restart Game')) init();});
+restartBtn.addEventListener('click',async ()=>{if(await customConfirm('Start new game?', 'Restart Game')) init();});
 if(restartBtnWin){
   restartBtnWin.addEventListener('click',()=>{init();});
 }
