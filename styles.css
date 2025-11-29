@@ -77,7 +77,6 @@ h1 {
     justify-content: center;
     gap: 3px;
     margin-top: 8px;
-    margin-bottom: 24px;
 }
 .piece {
     width: 60px;
@@ -94,10 +93,6 @@ h1 {
 }
 .piece.selected {
     outline: 3px solid #2b8aef;
-}
-.meta {
-    margin-top: 8px;
-    font-size: 13px;
 }
 .game-container {
     display: flex;
@@ -131,6 +126,7 @@ button {
     display: flex;
     align-items: center;
     gap: 4px;
+    height: 38px;
 }
 .footer {
     margin-top: 14px;
@@ -209,13 +205,15 @@ button {
     .show-mobile {
         display: block;
     }
+    button {
+        height: 26px;
+    }
     button svg {
         width: 18px;
         height: 18px;
     }
     .buttons {
-        margin-top: 0 !important;
-        margin-bottom: 0 !important;
+        gap: 15px !important;
     }
     .controls {
         display: flex;
@@ -250,7 +248,7 @@ button {
 .buttons {
     margin-top: 8px;
     display: flex;
-    gap: 8px;
+    gap: 12px;
     align-items: center;
     margin-bottom: 8px;
     justify-content: center;
