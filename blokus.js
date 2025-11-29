@@ -6,28 +6,34 @@ const PLAYERS = [
   {id:2,name:'Red',color:'#ef4444'},
   {id:3,name:'Green',color:'#10b981'}
 ];
+// piece names as per https://web.archive.org/web/20150720234834/http://blokusstrategy.com/piece-names/
 const PIECES = [
-  {id:'I1',cells:[[0,0]],name:'I1'},
-  {id:'I2',cells:[[0,0],[1,0]],name:'I2'},
-  {id:'I3',cells:[[0,0],[1,0],[2,0]],name:'I3'},
-  {id:'L3',cells:[[0,0],[0,1],[1,0]],name:'L3'},
-  {id:'I4',cells:[[0,0],[1,0],[2,0],[3,0]],name:'I4'},
-  {id:'L4',cells:[[1,1],[0,1],[0,2],[0,3]],name:'L4'},
-  {id:'O4',cells:[[0,0],[1,0],[0,1],[1,1]],name:'O4'},
+  // Monomino
+  {id:'1',cells:[[0,0]],name:'1'}, 
+  // Domino
+  {id:'2',cells:[[0,0],[0,1]],name:'2'},
+  // Trominoes
+  {id:'I3',cells:[[0,0],[0,1],[0,2]],name:'I3'},
+  {id:'V3',cells:[[0,0],[0,1],[1,0]],name:'V3'},
+  // Tetrominoes
+  {id:'I4',cells:[[0,0],[0,1],[0,2],[0,3]],name:'I4'},
+  {id:'L4',cells:[[0,0],[0,1],[1,0],[2,0]],name:'L4'},
+  {id:'O',cells:[[0,0],[1,0],[0,1],[1,1]],name:'O'},
   {id:'T4',cells:[[0,0],[1,1],[1,0],[2,0]],name:'T4'},
-  {id:'S4',cells:[[1,0],[2,0],[0,1],[1,1]],name:'S4'},
+  {id:'Z4',cells:[[1,0],[2,0],[0,1],[1,1]],name:'Z4'},
+  // Pentominoes
   {id:'I5',cells:[[0,0],[1,0],[2,0],[3,0],[4,0]],name:'I5'},
-  {id:'P5',cells:[[1,0],[0,1],[1,1],[2,1],[1,2]],name:'P5'},
-  {id:'L5',cells:[[1,1],[0,1],[0,2],[0,3],[0,4]],name:'L5'},
-  {id:'L5b',cells:[[2,1],[1,1],[0,1],[0,2],[0,3]],name:'L5b'},
-  {id:'L5c',cells:[[2,1],[1,1],[1,2],[1,3],[0,2]],name:'L5c'},
-  {id:'S5',cells:[[1,0],[2,0],[0,1],[1,1],[3,0]],name:'S5'},
-  {id:'S5b',cells:[[1,0],[2,0],[1,1],[1,2],[0,2]],name:'S5b'},
-  {id:'C5',cells:[[1,0],[2,0],[3,0],[1,1],[3,1]],name:'C5'},
-  {id:'M5',cells:[[1,0],[2,0],[0,1],[1,1],[0,2]],name:'M5'},
-  {id:'O5',cells:[[0,0],[1,0],[0,1],[1,1],[2,1]],name:'O5'},
-  {id:'T5',cells:[[0,0],[1,1],[1,0],[2,0],[3,0]],name:'T5'},
-  {id:'T5b',cells:[[0,0],[1,1],[1,0],[2,0],[1,2]],name:'T5b'},
+  {id:'X',cells:[[1,0],[0,1],[1,1],[2,1],[1,2]],name:'X'},
+  {id:'L5',cells:[[0,0],[0,1],[1,0],[2,0],[3,0]],name:'L5'},
+  {id:'V5',cells:[[2,1],[1,1],[0,1],[0,2],[0,3]],name:'V5'},
+  {id:'F',cells:[[2,1],[1,1],[1,2],[1,3],[0,2]],name:'F'},
+  {id:'N',cells:[[1,0],[2,0],[0,1],[1,1],[3,0]],name:'N'},
+  {id:'Z5',cells:[[1,0],[2,0],[1,1],[1,2],[0,2]],name:'Z5'},
+  {id:'U',cells:[[1,0],[2,1],[3,0],[1,1],[3,1]],name:'U'},
+  {id:'W',cells:[[1,0],[2,0],[0,1],[1,1],[0,2]],name:'W'},
+  {id:'P',cells:[[0,0],[1,0],[0,1],[1,1],[2,1]],name:'P'},
+  {id:'Y',cells:[[0,0],[1,1],[1,0],[2,0],[3,0]],name:'Y'},
+  {id:'T5',cells:[[0,0],[1,1],[1,0],[2,0],[1,2]],name:'T5'},
 ];
 
 // Precompute all unique orientations for each piece (performance optimization)
@@ -215,9 +221,19 @@ const rotateBtn = document.getElementById('rotateBtn');
 const passBtn = document.getElementById('passBtn');
 const undoBtn = document.getElementById('undoBtn');
 const restartBtn = document.getElementById('restartBtn');
+const restartBtnWin = document.getElementById('restartBtnWin');
 const endGameBtn = document.getElementById('endGameBtn');
 const showHintBtn = document.getElementById('showHintBtn');
 const autoMoveBtn = document.getElementById('autoMoveBtn');
+const winMessageEl = document.getElementById('win-message');
+const winMessagePlayerEl = document.getElementById('win-message-player');
+const noValidMovesEl = document.getElementById('no-valid-moves');
+const finalScoresEl = document.getElementById('final-scores');
+const confirmModalOverlay = document.getElementById('confirm-modal-overlay');
+const confirmModalTitle = document.getElementById('confirm-modal-title');
+const confirmModalMessage = document.getElementById('confirm-modal-message');
+const confirmModalOk = document.getElementById('confirm-modal-ok');
+const confirmModalCancel = document.getElementById('confirm-modal-cancel');
 
 // --- TOAST NOTIFICATIONS ---
 function showToast(message){
@@ -232,6 +248,53 @@ function showToast(message){
   setTimeout(() => {
     toast.remove();
   }, 3000);
+}
+
+// --- CUSTOM CONFIRM MODAL ---
+function customConfirm(message, title = 'Confirm'){
+  return new Promise((resolve) => {
+    if(!confirmModalOverlay || !confirmModalMessage || !confirmModalTitle) {
+      // Fallback to native confirm if modal elements don't exist
+      resolve(window.confirm(message));
+      return;
+    }
+    
+    // Set modal content
+    confirmModalTitle.textContent = title;
+    confirmModalMessage.textContent = message;
+    
+    // Show modal
+    confirmModalOverlay.classList.add('show');
+    
+    // Clean up previous listeners
+    const okHandler = () => {
+      confirmModalOverlay.classList.remove('show');
+      confirmModalOk.removeEventListener('click', okHandler);
+      confirmModalCancel.removeEventListener('click', cancelHandler);
+      confirmModalOverlay.removeEventListener('click', overlayHandler);
+      resolve(true);
+    };
+    
+    const cancelHandler = () => {
+      confirmModalOverlay.classList.remove('show');
+      confirmModalOk.removeEventListener('click', okHandler);
+      confirmModalCancel.removeEventListener('click', cancelHandler);
+      confirmModalOverlay.removeEventListener('click', overlayHandler);
+      resolve(false);
+    };
+    
+    const overlayHandler = (e) => {
+      // Only close if clicking the overlay itself, not the modal
+      if(e.target === confirmModalOverlay){
+        cancelHandler();
+      }
+    };
+    
+    // Add event listeners
+    confirmModalOk.addEventListener('click', okHandler);
+    confirmModalCancel.addEventListener('click', cancelHandler);
+    confirmModalOverlay.addEventListener('click', overlayHandler);
+  });
 }
 
 // --- DYNAMIC BOARD SCALING ---
@@ -270,17 +333,17 @@ function resizeBoard(){
     // Desktop: account for sidebar, gap, and padding
     const sidebar = document.querySelector('.sidebar');
     const sidebarWidth = sidebar ? sidebar.offsetWidth : 340;
-    const gap = 18; // gap between board and sidebar
+    const gap = 5; // gap between board and sidebar
     const bodyPadding = window.getComputedStyle(document.body).paddingLeft;
-    const padding = parseFloat(bodyPadding) || 18;
+    const padding = parseFloat(bodyPadding) || 5;
     
     availableWidth = viewportWidth - sidebarWidth - gap - (padding * 2);
     
     // Account for header and padding
     const header = document.querySelector('h1');
     const headerHeight = header ? header.offsetHeight + 12 : 30; // h1 + margin
-    const bodyPaddingTop = parseFloat(window.getComputedStyle(document.body).paddingTop) || 18;
-    const bodyPaddingBottom = parseFloat(window.getComputedStyle(document.body).paddingBottom) || 18;
+    const bodyPaddingTop = parseFloat(window.getComputedStyle(document.body).paddingTop) || 5;
+    const bodyPaddingBottom = parseFloat(window.getComputedStyle(document.body).paddingBottom) || 5;
     availableHeight = viewportHeight - headerHeight - bodyPaddingTop - bodyPaddingBottom;
   }
   
@@ -348,6 +411,17 @@ function init(){
   previewCell = null;
   cachedBoundingBox = null;
   isPlacing = false;
+  // Hide win message and show sidebar elements
+  if(winMessageEl){
+    winMessageEl.style.display = 'none';
+  }
+  
+  // Show .scores and .controls in the sidebar
+  const scoresEl = document.querySelector('.scores');
+  const controlsEl = document.querySelector('.controls');
+  if(scoresEl) scoresEl.style.display = '';
+  if(controlsEl) controlsEl.style.display = '';
+  
   updateBoardBorder();
   renderBoard();
   renderPalette();
@@ -1184,6 +1258,12 @@ function getLastPiecePlayed(playerId){
   return null;
 }
 
+// Get the size (number of cells) of a piece by its ID
+function getPieceSize(pieceId){
+  const piece = PIECES.find(p => p.id === pieceId);
+  return piece ? piece.cells.length : 0;
+}
+
 // Calculate a player's score according to official Blokus rules
 function calculatePlayerScore(playerId){
   const unplayedSquares = getUnplayedSquares(playerId);
@@ -1192,7 +1272,7 @@ function calculatePlayerScore(playerId){
   // Check if all 21 pieces were played
   if(usedPieces[playerId].size === 21){
     const lastPiece = getLastPiecePlayed(playerId);
-    if(lastPiece === 'I1'){ // Monomino bonus
+    if(lastPiece === '1'){ // Monomino bonus
       score += 20;
     } else {
       score += 15;
@@ -1200,6 +1280,159 @@ function calculatePlayerScore(playerId){
   }
   
   return score;
+}
+
+// Sort player scores with tiebreaker rules
+function sortPlayerScoresWithTiebreaker(playerScores){
+  // First sort by score (highest first)
+  playerScores.sort((a, b) => b.score - a.score);
+  
+  // Group players by score to handle ties
+  const scoreGroups = [];
+  let currentGroup = [];
+  let currentScore = null;
+  
+  for(const ps of playerScores){
+    if(ps.score !== currentScore){
+      if(currentGroup.length > 0){
+        scoreGroups.push({score: currentScore, players: currentGroup});
+      }
+      currentGroup = [ps];
+      currentScore = ps.score;
+    } else {
+      currentGroup.push(ps);
+    }
+  }
+  if(currentGroup.length > 0){
+    scoreGroups.push({score: currentScore, players: currentGroup});
+  }
+  
+  // Sort each group using tiebreaker rules
+  const sortedScores = [];
+  for(const group of scoreGroups){
+    if(group.players.length === 1){
+      // No tie, just add the player
+      sortedScores.push(...group.players);
+    } else {
+      // There's a tie - apply tiebreaker rules
+      const tiedPlayers = group.players.map(ps => ps.player);
+      const allPiecesPlaced = tiedPlayers.every(p => usedPieces[p.id].size === 21);
+      
+      // Create a map of player to their tiebreaker value for sorting
+      const tiebreakerValues = new Map();
+      
+      if(allPiecesPlaced){
+        // Special case: All tied players placed all pieces
+        // Sort by who placed piece "1" last (most recent = better rank)
+        const monominoIndices = new Map();
+        
+        for(let i = history.length - 1; i >= 0; i--){
+          const move = history[i];
+          if(!move.pass && move.pid === '1' && tiedPlayers.some(p => p.id === move.player)){
+            if(!monominoIndices.has(move.player)){
+              monominoIndices.set(move.player, i);
+            }
+          }
+        }
+        
+        // Players with monomino get higher rank (higher index = more recent = better)
+        // Players without monomino get worst rank (Infinity)
+        for(const player of tiedPlayers){
+          const index = monominoIndices.get(player.id);
+          // Use negative index so higher index (more recent) = smaller value (better rank)
+          tiebreakerValues.set(player.id, index !== undefined ? -index : Infinity);
+        }
+      } else {
+        // Regular tiebreaker: sort by smallest last piece size
+        // If same size, most recent wins (higher index = better)
+        const lastPieceSizes = new Map();
+        const lastPieceIndices = new Map();
+        
+        // Find last piece for each player
+        for(let i = history.length - 1; i >= 0; i--){
+          const move = history[i];
+          if(!move.pass && move.pid && tiedPlayers.some(p => p.id === move.player)){
+            if(!lastPieceIndices.has(move.player)){
+              const pieceSize = getPieceSize(move.pid);
+              lastPieceSizes.set(move.player, pieceSize);
+              lastPieceIndices.set(move.player, i);
+            }
+          }
+        }
+        
+        // Sort by: smaller piece size first, then by most recent (higher index)
+        for(const player of tiedPlayers){
+          const pieceSize = lastPieceSizes.get(player.id) || Infinity;
+          const moveIndex = lastPieceIndices.get(player.id) || -1;
+          // Smaller piece size = better rank (smaller value)
+          // Higher move index (more recent) = better rank (smaller value)
+          // Use pieceSize * large_number - moveIndex so smaller piece and more recent = smaller value
+          tiebreakerValues.set(player.id, pieceSize * 10000 - moveIndex);
+        }
+      }
+      
+      // Sort the tied players by tiebreaker value
+      group.players.sort((a, b) => {
+        const valA = tiebreakerValues.get(a.player.id) ?? Infinity;
+        const valB = tiebreakerValues.get(b.player.id) ?? Infinity;
+        return valA - valB; // Lower value = better rank
+      });
+      
+      sortedScores.push(...group.players);
+    }
+  }
+  
+  return sortedScores;
+}
+
+// Render final scores in the win message (same style as renderScores)
+function renderFinalScores(){
+  if(!finalScoresEl) return;
+  
+  // Calculate scores for all players
+  const playerScores = PLAYERS.map(player => ({
+    player: player,
+    score: calculatePlayerScore(player.id)
+  }));
+  
+  // Sort by score (highest first)
+  playerScores.sort((a, b) => b.score - a.score);
+  
+  // Check if there are any ties (players with same score)
+  const hasTies = playerScores.some((ps, index) => {
+    if(index === 0) return false;
+    return ps.score === playerScores[index - 1].score;
+  });
+  
+  // Only apply tiebreaker rules if there are ties
+  const sortedScores = hasTies ? sortPlayerScoresWithTiebreaker(playerScores) : playerScores;
+  
+  // Clear and render
+  finalScoresEl.innerHTML = '';
+  sortedScores.forEach((ps, index) => {
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '8px';
+    row.style.marginBottom = '4px';
+    row.style.padding = '4px';
+    
+    // Player color swatch
+    const swatch = document.createElement('div');
+    swatch.style.width = '12px';
+    swatch.style.height = '12px';
+    swatch.style.borderRadius = '2px';
+    swatch.style.background = ps.player.color;
+    row.appendChild(swatch);
+    
+    // Player name and score
+    const text = document.createElement('span');
+    text.textContent = `${ps.player.name}: ${ps.score}`;
+    text.style.fontSize = '13px';
+    row.appendChild(text);
+    
+    finalScoresEl.appendChild(row);
+  });
 }
 
 // End game and show results
@@ -1213,14 +1446,110 @@ function endGame(){
   // Sort by score (highest first)
   playerScores.sort((a, b) => b.score - a.score);
   
-  // Build result message
-  let message = 'Game Over\n\n';
-  playerScores.forEach((ps, index) => {
-    const place = index + 1;
-    message += `${place}. Player ${ps.player.name}: ${ps.score} points\n`;
-  });
+  // Check for ties and apply tiebreaker rules
+  let winner = playerScores[0].player;
+  const topScore = playerScores[0].score;
   
-  alert(message);
+  // Find all players with the top score (potential ties)
+  const tiedPlayers = playerScores.filter(ps => ps.score === topScore).map(ps => ps.player);
+  
+  if(tiedPlayers.length > 1){
+    // There's a tie - apply tiebreaker rules
+    const allPiecesPlaced = tiedPlayers.every(p => usedPieces[p.id].size === 21);
+    
+    if(allPiecesPlaced){
+      // Special case: All tied players placed all pieces
+      // Winner is the one who placed the single-square piece (piece "1") last
+      let lastMonominoPlayer = null;
+      let lastMonominoIndex = -1;
+      
+      // Find the last player who placed piece "1"
+      for(let i = history.length - 1; i >= 0; i--){
+        const move = history[i];
+        if(!move.pass && move.pid === '1' && tiedPlayers.some(p => p.id === move.player)){
+          if(i > lastMonominoIndex){
+            lastMonominoIndex = i;
+            lastMonominoPlayer = PLAYERS.find(p => p.id === move.player);
+          }
+        }
+      }
+      
+      if(lastMonominoPlayer){
+        winner = lastMonominoPlayer;
+      } else {
+        // Fallback: if no monomino found, use first tied player
+        winner = tiedPlayers[0];
+      }
+    } else {
+      // Regular tiebreaker: winner is the one who played the smaller last piece
+      // If multiple players have the same smallest piece, the one who played it most recently wins
+      let smallestLastPieceSize = Infinity;
+      let winnerWithSmallestPiece = null;
+      let lastMoveIndex = -1;
+      
+      // First, find the smallest piece size among tied players
+      for(const player of tiedPlayers){
+        const lastPieceId = getLastPiecePlayed(player.id);
+        if(lastPieceId){
+          const pieceSize = getPieceSize(lastPieceId);
+          if(pieceSize < smallestLastPieceSize){
+            smallestLastPieceSize = pieceSize;
+          }
+        }
+      }
+      
+      // Then, find the player with the smallest piece who played it most recently
+      for(let i = history.length - 1; i >= 0; i--){
+        const move = history[i];
+        if(!move.pass && move.pid && tiedPlayers.some(p => p.id === move.player)){
+          const pieceSize = getPieceSize(move.pid);
+          if(pieceSize === smallestLastPieceSize && i > lastMoveIndex){
+            lastMoveIndex = i;
+            winnerWithSmallestPiece = PLAYERS.find(p => p.id === move.player);
+          }
+        }
+      }
+      
+      if(winnerWithSmallestPiece){
+        winner = winnerWithSmallestPiece;
+      } else {
+        // Fallback: if no last piece found, use first tied player
+        winner = tiedPlayers[0];
+      }
+    }
+  }
+  
+  // Set winner name
+  if(winMessagePlayerEl){
+    winMessagePlayerEl.textContent = winner.name;
+  }
+  
+  // Check if any players have valid moves
+  const playersWithValidMoves = PLAYERS.filter(p => hasValidMoves(p.id));
+  const hasNoValidMoves = playersWithValidMoves.length === 0;
+  
+  // Show/hide "No more valid moves" message
+  if(noValidMovesEl){
+    noValidMovesEl.style.display = hasNoValidMoves ? 'inline-block' : 'none';
+  }
+  
+  // Set winner border color CSS variable
+  const root = document.documentElement;
+  root.style.setProperty('--winner-border-color', winner.color);
+  
+  // Render final scores
+  renderFinalScores();
+  
+  // Show win message and hide sidebar elements
+  if(winMessageEl){
+    winMessageEl.style.display = 'block';
+  }
+  
+  // Hide .scores and .controls in the sidebar
+  const scoresEl = document.querySelector('.scores');
+  const controlsEl = document.querySelector('.controls');
+  if(scoresEl) scoresEl.style.display = 'none';
+  if(controlsEl) controlsEl.style.display = 'none';
 }
 
 // Log all player scores to console
@@ -1484,8 +1813,11 @@ rotateBtn.addEventListener('click',()=>{
 });
 passBtn.addEventListener('click',()=>{history.push({player:currentPlayer,pass:true});nextTurn();renderPalette();});
 undoBtn.addEventListener('click',()=>{undo();});
-restartBtn.addEventListener('click',()=>{if(confirm('Restart?')) init();});
-endGameBtn.addEventListener('click',()=>{if(confirm('End game and calculate scores?')) endGame();});
+restartBtn.addEventListener('click',async ()=>{if(await customConfirm('Restart?', 'Restart Game')) init();});
+if(restartBtnWin){
+  restartBtnWin.addEventListener('click',()=>{init();});
+}
+endGameBtn.addEventListener('click',async ()=>{if(await customConfirm('End game and calculate scores?', 'End Game')) endGame();});
 showHintBtn.addEventListener('click',()=>{
   const hint = hasValidMoves(currentPlayer, true);
   showToast(hint);

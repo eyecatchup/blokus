@@ -2,6 +2,13 @@
 
 Play in your (mobile) browser: https://eyecatchup.github.io/blokus/
 
+## Scoring Rules
+
+The official Mattel rules, don't specify a tiebraker rule. However, a common rule is established and used for determining the winner in this game implementation.
+
+Tiebreaker: If both players have the same number of unplayed squares, the winner is the one who played the smaller last piece.  
+All pieces placed: If both players complete the game by placing all their pieces, the player who placed the single-square piece last is the winner.
+
 ## Clarifying the “Free-Corner” vs. “Assigned-Corner” Rule
 
 According to the official Mattel rules—as well as major digital implementations such as the official app and Board Game Arena—each player may place their first piece on any of the four board corners. Starting corners are not tied to specific colors.
