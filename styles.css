@@ -225,6 +225,10 @@ button {
         flex: 1;
         min-width: 0;
     }
+    .controls > #palette {
+        flex-basis: 100%;
+        width: 100%;
+    }
     .pieces {
         margin-top: 0;
     }
