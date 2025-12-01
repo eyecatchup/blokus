@@ -237,6 +237,7 @@ document.body.appendChild(emptyDragImage);
 const boardEl = document.getElementById('board');
 const paletteEl = document.getElementById('palette');
 const scoresEl = document.getElementById('scores');
+let paletteWidthFixed = false; // Track if palette width has been fixed
 const toastContainer = document.getElementById('toast-container');
 const flipBtn = document.getElementById('flipBtn');
 const rotateBtn = document.getElementById('rotateBtn');
@@ -640,6 +641,7 @@ function setupResizeObserver(){
       resizeDebounceTimeout = setTimeout(() => {
         resizeBoard();
         updateBoardDimensionsCache();
+        updatePaletteWidth();
       }, 100);
     });
     
@@ -655,6 +657,7 @@ function setupResizeObserver(){
       resizeDebounceTimeout = setTimeout(() => {
         resizeBoard();
         updateBoardDimensionsCache();
+        updatePaletteWidth();
       }, 150); // Slightly longer delay for orientation changes
     });
   } else {
@@ -666,12 +669,17 @@ function setupResizeObserver(){
       resizeDebounceTimeout = setTimeout(() => {
         resizeBoard();
         updateBoardDimensionsCache();
+        updatePaletteWidth();
       }, 100);
     };
     
     window.addEventListener('resize', fallbackResize);
     window.addEventListener('orientationchange', () => {
-      setTimeout(fallbackResize, 150);
+      setTimeout(() => {
+        resizeBoard();
+        updateBoardDimensionsCache();
+        updatePaletteWidth();
+      }, 150);
     });
   }
 }
@@ -1051,9 +1059,32 @@ function pieceToGrid(piece){
   return compute5x5Grid(piece.cells);
 }
 
+// Update palette width on window resize
+function updatePaletteWidth(){
+  if(!paletteEl || !paletteWidthFixed) return;
+  
+  // Temporarily remove fixed width to measure natural width after resize
+  const oldWidth = paletteEl.style.width;
+  paletteEl.style.width = '';
+  
+  // Use requestAnimationFrame to ensure DOM has updated
+  requestAnimationFrame(() => {
+    if(paletteEl.offsetWidth > 0){
+      // Re-measure and fix the width after resize
+      paletteEl.style.width = `${paletteEl.offsetWidth}px`;
+    } else {
+      // Fallback: restore old width if measurement failed
+      paletteEl.style.width = oldWidth;
+    }
+  });
+}
+
 // --- RENDER PALETTE (click to select, then drag) ---
 function renderPalette(){
   if(!paletteEl) return;
+  
+  // Save fixed width before clearing to restore it after rerender
+  const savedWidth = paletteWidthFixed ? paletteEl.style.width : null;
   
   paletteEl.innerHTML='';
   cachedPieceElements = []; // Reset cache
@@ -1276,6 +1307,16 @@ function renderPalette(){
     paletteEl.appendChild(wrapper);
     cachedPieceElements.push(wrapper); // Cache piece element
   });
+  
+  // Fix width after first render to prevent sidebar jumping on subsequent rerenders
+  if(!paletteWidthFixed && paletteEl.offsetWidth > 0){
+    // First render: measure and fix the width
+    paletteEl.style.width = `${paletteEl.offsetWidth}px`;
+    paletteWidthFixed = true;
+  } else if(paletteWidthFixed && savedWidth){
+    // Subsequent renders: restore the fixed width that was saved before clearing
+    paletteEl.style.width = savedWidth;
+  }
 }
 
 // --- RENDER SCORES ---
