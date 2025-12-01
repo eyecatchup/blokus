@@ -376,19 +376,15 @@ button {
 .mode-button {
     padding: 12px 24px;
     border-radius: 6px;
-    border: 2px solid #2b8aef;
+    border: 1px solid #ddd;
     background: #fff;
-    color: #2b8aef;
     cursor: pointer;
-    font-size: 16px;
-    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 50px;
     transition: all 0.2s;
-    width: 100%;
-}
-
-.mode-button:hover {
-    background: #2b8aef;
-    color: #fff;
+    justify-content: center;
 }
 
 .mode-button-secondary {
