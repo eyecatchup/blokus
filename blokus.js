@@ -87,8 +87,24 @@ function computeAdjustedPlacement(orientation, boardX, boardY){
   return placed;
 }
 
+// Precompute 5x5 grid representation for each piece (for palette rendering)
+function compute5x5Grid(cells){
+  const normalized = normalizeOrientation(cells);
+  const width = Math.max(...normalized.map(c => c[0])) + 1;
+  const height = Math.max(...normalized.map(c => c[1])) + 1;
+  
+  // Fit into 5×5 simply by centering
+  const offsetX = Math.floor((5 - width) / 2);
+  const offsetY = Math.floor((5 - height) / 2);
+  
+  return normalized.map(([x, y]) => [x + offsetX, y + offsetY]);
+}
+
 // Precompute orientations and placement cache for all pieces at startup
 PIECES.forEach(piece => {
+  // Precompute 5x5 grid representation for palette rendering
+  piece.grid5 = compute5x5Grid(piece.cells);
+  
   const orientations = [];
   const seen = new Set(); // Use Set for O(1) lookup instead of O(n) array search
   let cells = piece.cells.map(c => [c[0], c[1]]); // Start with fresh copy
@@ -601,14 +617,63 @@ function resizeBoard(){
   }
 }
 
-// Debounce resize handler
-let resizeTimeout;
-function handleResize(){
-  clearTimeout(resizeTimeout);
-  resizeTimeout = setTimeout(() => {
-    resizeBoard();
-    updateBoardDimensionsCache(); // Update cached board dimensions on resize
-  }, 100);
+// ResizeObserver for automatic board resizing
+let resizeObserver = null;
+let resizeDebounceTimeout = null;
+
+function setupResizeObserver(){
+  if(!boardEl) return;
+  
+  // Clean up existing observer if any
+  if(resizeObserver){
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
+  
+  // Use ResizeObserver if available (all modern browsers)
+  if(typeof ResizeObserver !== 'undefined'){
+    resizeObserver = new ResizeObserver(entries => {
+      // Debounce to avoid excessive recalculations
+      if(resizeDebounceTimeout){
+        clearTimeout(resizeDebounceTimeout);
+      }
+      resizeDebounceTimeout = setTimeout(() => {
+        resizeBoard();
+        updateBoardDimensionsCache();
+      }, 100);
+    });
+    
+    // Observe the body element (or game container) for size changes
+    const gameContainer = document.querySelector('.game-container') || document.body;
+    resizeObserver.observe(gameContainer);
+    
+    // Also observe window for orientation changes (ResizeObserver doesn't catch these)
+    window.addEventListener('orientationchange', () => {
+      if(resizeDebounceTimeout){
+        clearTimeout(resizeDebounceTimeout);
+      }
+      resizeDebounceTimeout = setTimeout(() => {
+        resizeBoard();
+        updateBoardDimensionsCache();
+      }, 150); // Slightly longer delay for orientation changes
+    });
+  } else {
+    // Fallback for older browsers: use window resize event
+    const fallbackResize = () => {
+      if(resizeDebounceTimeout){
+        clearTimeout(resizeDebounceTimeout);
+      }
+      resizeDebounceTimeout = setTimeout(() => {
+        resizeBoard();
+        updateBoardDimensionsCache();
+      }, 100);
+    };
+    
+    window.addEventListener('resize', fallbackResize);
+    window.addEventListener('orientationchange', () => {
+      setTimeout(fallbackResize, 150);
+    });
+  }
 }
 
 // Update board border color to match current player
@@ -671,6 +736,9 @@ function init(){
   // Document-level touchmove handler to catch all touch moves for ghost preview
   document.removeEventListener('touchmove', handleDocumentTouchMove);
   document.addEventListener('touchmove', handleDocumentTouchMove, {passive: false});
+  
+  // Setup ResizeObserver for automatic resizing
+  setupResizeObserver();
   
   // If it's computer's turn, auto-execute move
   if(isComputerTurn(currentPlayer)){
@@ -859,6 +927,9 @@ function renderBoard(){
   boardEl.removeEventListener('touchmove', handleBoardTouchMove);
   boardEl.removeEventListener('touchend', handleBoardTouchEnd);
   boardEl.removeEventListener('touchcancel', handleBoardTouchCancel);
+  boardEl.removeEventListener('dragover', handleBoardDragOver);
+  boardEl.removeEventListener('drop', handleBoardDrop);
+  boardEl.removeEventListener('dragleave', handleBoardDragLeave);
   
   boardEl.innerHTML='';
   cellEls = Array.from({length: SIZE}, () => []);
@@ -871,20 +942,13 @@ function renderBoard(){
       if(cell!=null){
         const dot=document.createElement('div');dot.className='dot';dot.style.background=PLAYERS[cell.player].color;c.appendChild(dot);
       }
-      // Drag events must stay on cells (can't use delegation)
-      c.addEventListener('dragover',onDragOver);
-      c.addEventListener('drop',onDrop);
-      c.addEventListener('dragleave',(e)=>{
-        if(!e.relatedTarget || !boardEl.contains(e.relatedTarget)){
-          clearGhost();
-        }
-      });
+      // No longer adding individual event listeners - using delegation on boardEl
       boardEl.appendChild(c);
       if(cellEls[y]) cellEls[y][x] = c;
     }
   }
   
-  // Use event delegation for click and touch events (more efficient)
+  // Use event delegation for all events (much more efficient - only 7 listeners total instead of 400+)
   boardEl.addEventListener('click', handleBoardClick);
   boardEl.addEventListener('touchstart', handleBoardTouchStart, {passive: true});
   // Note: touchmove is handled by handleDocumentTouchMove for global coverage
@@ -892,6 +956,10 @@ function renderBoard(){
   boardEl.addEventListener('touchmove', handleBoardTouchMove, {passive: false});
   boardEl.addEventListener('touchend', handleBoardTouchEnd, {passive: false});
   boardEl.addEventListener('touchcancel', handleBoardTouchCancel);
+  // Event delegation for drag events
+  boardEl.addEventListener('dragover', handleBoardDragOver);
+  boardEl.addEventListener('drop', handleBoardDrop);
+  boardEl.addEventListener('dragleave', handleBoardDragLeave);
   
   // Update cell cache after rendering
   initCellCache();
@@ -973,16 +1041,14 @@ function handleBoardTouchCancel(e){
 }
 
 // Convert piece cells to 5x5 grid positions (normalized and centered)
+// Now uses precomputed cache for better performance
 function pieceToGrid(piece){
-  const cells = normalizeOrientation(piece.cells);
-  const width = Math.max(...cells.map(c => c[0])) + 1;
-  const height = Math.max(...cells.map(c => c[1])) + 1;
-
-  // Fit into 5×5 simply by centering
-  const offsetX = Math.floor((5 - width) / 2);
-  const offsetY = Math.floor((5 - height) / 2);
-
-  return cells.map(([x, y]) => [x + offsetX, y + offsetY]);
+  // Use precomputed grid5 if available (should always be available after initialization)
+  if(piece.grid5){
+    return piece.grid5;
+  }
+  // Fallback for edge cases (shouldn't happen)
+  return compute5x5Grid(piece.cells);
 }
 
 // --- RENDER PALETTE (click to select, then drag) ---
@@ -1382,15 +1448,33 @@ function updateGhostPreview(cellEl, x, y){
   });
 }
 
-// --- DRAG TARGETS ON BOARD ---
-function onDragOver(e){ 
-  e.preventDefault(); 
-  if(isDragging() && selectedPiece){
-    const x=parseInt(e.currentTarget.dataset.x,10);
-    const y=parseInt(e.currentTarget.dataset.y,10);
-    lastHoveredCell = e.currentTarget;
-    hoveringCell = {x, y};
-    updateGhostPreview(e.currentTarget, x, y);
+// --- DRAG TARGETS ON BOARD (using event delegation) ---
+function handleBoardDragOver(e){
+  e.preventDefault();
+  const cell = e.target.closest('.cell');
+  if(!cell || !isDragging() || !selectedPiece) return;
+  
+  const x = parseInt(cell.dataset.x, 10);
+  const y = parseInt(cell.dataset.y, 10);
+  lastHoveredCell = cell;
+  hoveringCell = {x, y};
+  updateGhostPreview(cell, x, y);
+}
+
+function handleBoardDrop(e){
+  e.preventDefault();
+  const cell = e.target.closest('.cell');
+  if(!cell || !isDragging() || !selectedPiece || isPlacing) return;
+  
+  const x = parseInt(cell.dataset.x, 10);
+  const y = parseInt(cell.dataset.y, 10);
+  handlePlacement(cell, x, y);
+}
+
+function handleBoardDragLeave(e){
+  // Only clear ghost if we're actually leaving the board (not just moving between cells)
+  if(!e.relatedTarget || !boardEl.contains(e.relatedTarget)){
+    clearGhost();
   }
 }
 
@@ -1469,14 +1553,7 @@ function handlePlacement(cellEl, x, y){
   nextTurn();renderBoard();renderPalette();
 }
 
-function onDrop(e){
-  e.preventDefault();
-  // Only handle if not already placing (prevents duplicate calls)
-  if(!isDragging() || !selectedPiece || isPlacing) return;
-  const x=parseInt(e.currentTarget.dataset.x,10);
-  const y=parseInt(e.currentTarget.dataset.y,10);
-  handlePlacement(e.currentTarget, x, y);
-}
+// onDrop is now replaced by handleBoardDrop (event delegation)
 
 // --- RULES / HELPERS ---
 function isInsideBoard(cells){return cells.every(([x,y])=>x>=0&&x<SIZE&&y>=0&&y<SIZE);} 
@@ -2401,32 +2478,21 @@ autoMoveBtn.addEventListener('click',()=>{
   makeAutoMove();
 });
 
-// Setup resize handler
-window.addEventListener('resize', handleResize);
-// Also handle orientation changes on mobile devices
-window.addEventListener('orientationchange', () => {
-  // Delay slightly to allow viewport to update
-  setTimeout(() => {
-    resizeBoard();
-  }, 100);
-});
-
 // Initialize game
 init();
 
-// Ensure board scaling runs after DOM is fully loaded and laid out
+// Initial board resize after DOM is ready (ResizeObserver will handle subsequent changes)
 if(document.readyState === 'loading'){
   document.addEventListener('DOMContentLoaded', () => {
-    // Use requestAnimationFrame to ensure layout is complete
     requestAnimationFrame(() => {
       resizeBoard();
+      updateBoardDimensionsCache();
     });
   });
 } else {
-  // DOM already loaded, but ensure layout is complete
+  // DOM already loaded
   requestAnimationFrame(() => {
     resizeBoard();
-    // Also call after a short delay to catch any late layout changes
-    setTimeout(resizeBoard, 100);
+    updateBoardDimensionsCache();
   });
 }
