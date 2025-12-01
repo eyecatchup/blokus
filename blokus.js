@@ -836,7 +836,7 @@ function handleDragMove(clientX, clientY){
     if(cellInfo){
       hoveringCell = {x: cellInfo.x, y: cellInfo.y};
       lastHoveredCell = cellInfo.element;
-      updateGhostPreview(cellInfo.element, cellInfo.x, cellInfo.y);
+      scheduleGhostUpdate(cellInfo.element, cellInfo.x, cellInfo.y);
     } else {
       hoveringCell = null;
       clearGhost();
@@ -1116,9 +1116,9 @@ function renderPalette(){
         if(isPreviewing() && previewCell){
           const x=parseInt(previewCell.dataset.x,10);
           const y=parseInt(previewCell.dataset.y,10);
-          updateGhostPreview(previewCell, x, y);
+          scheduleGhostUpdate(previewCell, x, y);
         } else if(lastHoveredCell){
-          updateGhostPreview(lastHoveredCell, lastHoveredCell.dataset.x, lastHoveredCell.dataset.y);
+          scheduleGhostUpdate(lastHoveredCell, parseInt(lastHoveredCell.dataset.x, 10), parseInt(lastHoveredCell.dataset.y, 10));
         }
         // Update visual representation in palette
         updateSelectedPieceVisual();
@@ -1222,7 +1222,7 @@ function renderPalette(){
                 if(isPreviewing() && previewCell){
                   const x=parseInt(previewCell.dataset.x,10);
                   const y=parseInt(previewCell.dataset.y,10);
-                  updateGhostPreview(previewCell, x, y);
+                  scheduleGhostUpdate(previewCell, x, y);
                 }
               }
             } else if(result.type === 'drag' && result.cell){
@@ -1376,6 +1376,24 @@ let ghostCells = [];
 // Cache bounding box for selected orientation to avoid recalculation
 let cachedBoundingBox = null;
 
+// RequestAnimationFrame scheduling for ghost preview (prevents excessive DOM updates)
+let ghostScheduled = false;
+let scheduledGhost = null;
+
+function scheduleGhostUpdate(cellEl, x, y){
+  scheduledGhost = {cellEl, x, y};
+  if(!ghostScheduled){
+    ghostScheduled = true;
+    requestAnimationFrame(() => {
+      ghostScheduled = false;
+      if(scheduledGhost){
+        updateGhostPreview(scheduledGhost.cellEl, scheduledGhost.x, scheduledGhost.y);
+        scheduledGhost = null;
+      }
+    });
+  }
+}
+
 function clearGhost(){ 
   // Efficiently clear only cells that have ghost classes
   ghostCells.forEach(c=>{
@@ -1458,7 +1476,7 @@ function handleBoardDragOver(e){
   const y = parseInt(cell.dataset.y, 10);
   lastHoveredCell = cell;
   hoveringCell = {x, y};
-  updateGhostPreview(cell, x, y);
+  scheduleGhostUpdate(cell, x, y);
 }
 
 function handleBoardDrop(e){
@@ -1494,7 +1512,7 @@ function handleCellInteraction(cellEl, x, y){
   // Otherwise, enter preview mode or update preview position
   setPreviewMode(true);
   previewCell = cellEl;
-  updateGhostPreview(cellEl, x, y);
+  scheduleGhostUpdate(cellEl, x, y);
 }
 function handlePlacement(cellEl, x, y){
   if(!selectedPiece || isPlacing) return;
@@ -1571,13 +1589,22 @@ function validBlokusContact(cells,player){
   }
   let hasCorner=false;
   for(const [x,y] of cells){
+    // Early exit: Check sides first (faster to fail)
     const sides=[[x-1,y],[x+1,y],[x,y-1],[x,y+1]];
     for(const [nx,ny] of sides){
       if(nx>=0&&nx<SIZE&&ny>=0&&ny<SIZE&&board[ny][nx]&&board[ny][nx].player===player) return false;
     }
-    const corners=[[x-1,y-1],[x+1,y-1],[x-1,y+1],[x+1,y+1]];
-    for(const [cx,cy] of corners){
-      if(cx>=0&&cx<SIZE&&cy>=0&&cy<SIZE&&board[cy][cx]&&board[cy][cx].player===player) hasCorner=true;
+    // Check corners (only if we haven't found a corner yet)
+    if(!hasCorner){
+      const corners=[[x-1,y-1],[x+1,y-1],[x-1,y+1],[x+1,y+1]];
+      for(const [cx,cy] of corners){
+        if(cx>=0&&cx<SIZE&&cy>=0&&cy<SIZE&&board[cy][cx]&&board[cy][cx].player===player){
+          hasCorner=true;
+          // Early exit: if this is not the first move, we can return immediately once corner is found
+          if(usedPieces[player].size>0) return true;
+          break; // Break inner loop, continue outer loop to check all sides
+        }
+      }
     }
   }
   if(usedPieces[player].size===0) return true;
@@ -2422,6 +2449,8 @@ function undo(){
   if(last.pass){currentPlayer=last.player;updateBoardBorder();updateTurnIndicator();renderPalette();renderScores();return;}
   last.placed.forEach(([x,y])=>board[y][x]=null);
   usedPieces[last.player].delete(last.pid);
+  // Invalidate valid moves cache (board state changed)
+  PLAYERS.forEach(p => validMovesCache[p.id] = undefined);
   currentPlayer=last.player;updateBoardBorder();updateTurnIndicator();renderBoard();renderPalette();renderScores();
 }
 flipBtn.addEventListener('click',()=>{
@@ -2432,11 +2461,11 @@ flipBtn.addEventListener('click',()=>{
     if(isPreviewing() && previewCell){
       const x=parseInt(previewCell.dataset.x,10);
       const y=parseInt(previewCell.dataset.y,10);
-      updateGhostPreview(previewCell, x, y);
+      scheduleGhostUpdate(previewCell, x, y);
     } else if(lastHoveredCell){
       const x=parseInt(lastHoveredCell.dataset.x,10);
       const y=parseInt(lastHoveredCell.dataset.y,10);
-      updateGhostPreview(lastHoveredCell, x, y);
+      scheduleGhostUpdate(lastHoveredCell, x, y);
     }
   }
 });
@@ -2448,11 +2477,11 @@ rotateBtn.addEventListener('click',()=>{
     if(isPreviewing() && previewCell){
       const x=parseInt(previewCell.dataset.x,10);
       const y=parseInt(previewCell.dataset.y,10);
-      updateGhostPreview(previewCell, x, y);
+      scheduleGhostUpdate(previewCell, x, y);
     } else if(lastHoveredCell){
       const x=parseInt(lastHoveredCell.dataset.x,10);
       const y=parseInt(lastHoveredCell.dataset.y,10);
-      updateGhostPreview(lastHoveredCell, x, y);
+      scheduleGhostUpdate(lastHoveredCell, x, y);
     }
   }
 });
