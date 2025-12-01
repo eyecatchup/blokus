@@ -1587,26 +1587,28 @@ function validBlokusContact(cells,player){
     ];
     if(!cells.some(([x,y])=>corners.some(([cx,cy])=>x===cx&&y===cy))) return false;
   }
-  let hasCorner=false;
+  
+  // First pass: Check ALL cells for side contacts (invalid - must check all before returning)
   for(const [x,y] of cells){
-    // Early exit: Check sides first (faster to fail)
     const sides=[[x-1,y],[x+1,y],[x,y-1],[x,y+1]];
     for(const [nx,ny] of sides){
       if(nx>=0&&nx<SIZE&&ny>=0&&ny<SIZE&&board[ny][nx]&&board[ny][nx].player===player) return false;
     }
-    // Check corners (only if we haven't found a corner yet)
-    if(!hasCorner){
-      const corners=[[x-1,y-1],[x+1,y-1],[x-1,y+1],[x+1,y+1]];
-      for(const [cx,cy] of corners){
-        if(cx>=0&&cx<SIZE&&cy>=0&&cy<SIZE&&board[cy][cx]&&board[cy][cx].player===player){
-          hasCorner=true;
-          // Early exit: if this is not the first move, we can return immediately once corner is found
-          if(usedPieces[player].size>0) return true;
-          break; // Break inner loop, continue outer loop to check all sides
-        }
+  }
+  
+  // Second pass: Check ALL cells for corner contacts (valid - need at least one)
+  let hasCorner=false;
+  for(const [x,y] of cells){
+    const corners=[[x-1,y-1],[x+1,y-1],[x-1,y+1],[x+1,y+1]];
+    for(const [cx,cy] of corners){
+      if(cx>=0&&cx<SIZE&&cy>=0&&cy<SIZE&&board[cy][cx]&&board[cy][cx].player===player){
+        hasCorner=true;
+        break; // Found corner contact, no need to check more corners for this cell
       }
     }
+    if(hasCorner) break; // Found corner contact, no need to check more cells
   }
+  
   if(usedPieces[player].size===0) return true;
   return hasCorner;
 }
