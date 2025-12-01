@@ -203,6 +203,12 @@ let board = [];
 let currentPlayer = 0;
 let usedPieces = {};
 let history = [];
+// Game mode state
+let gameMode = null; // 'vsComputer' | 'localMultiplayer'
+let numberOfPlayers = null; // 2, 3, or 4
+let playerAssignments = {}; // Maps colorId (0-3) to playerNumber (1-4) or 'computer'
+let sharedColor = null; // For 3-player mode: which color is shared (0-3), null otherwise
+let sharedColorTurn = 1; // For 3-player mode: which player's turn it is for shared color (1-3)
 // Create a transparent drag image element to avoid overlaying the ghost preview
 const emptyDragImage = document.createElement('div');
 emptyDragImage.style.width = '1px';
@@ -234,6 +240,14 @@ const confirmModalTitle = document.getElementById('confirm-modal-title');
 const confirmModalMessage = document.getElementById('confirm-modal-message');
 const confirmModalOk = document.getElementById('confirm-modal-ok');
 const confirmModalCancel = document.getElementById('confirm-modal-cancel');
+const modeSelectionOverlay = document.getElementById('mode-selection-overlay');
+const modeSelectionStep1 = document.getElementById('mode-selection-step1');
+const modeSelectionStep2 = document.getElementById('mode-selection-step2');
+const modeVsComputerBtn = document.getElementById('mode-vs-computer');
+const modeLocalMultiplayerBtn = document.getElementById('mode-local-multiplayer');
+const playerCountButtons = document.getElementById('player-count-buttons');
+const modeSelectionBackBtn = document.getElementById('mode-selection-back');
+const turnIndicatorEl = document.getElementById('turn-indicator');
 
 // --- TOAST NOTIFICATIONS ---
 function showToast(message){
@@ -294,6 +308,183 @@ function customConfirm(message, title = 'Confirm'){
     confirmModalOk.addEventListener('click', okHandler);
     confirmModalCancel.addEventListener('click', cancelHandler);
     confirmModalOverlay.addEventListener('click', overlayHandler);
+  });
+}
+
+// --- GAME MODE HELPERS ---
+function isComputerTurn(colorId){
+  return playerAssignments[colorId] === 'computer';
+}
+
+function getPlayerForColor(colorId){
+  // Handle shared color for 3-player mode
+  if(sharedColor !== null && colorId === sharedColor){
+    return sharedColorTurn;
+  }
+  return playerAssignments[colorId] || null;
+}
+
+function getColorsForPlayer(playerNumber){
+  const colors = [];
+  for(let colorId = 0; colorId < 4; colorId++){
+    // Exclude shared colors (they don't count toward player score)
+    if(sharedColor !== null && colorId === sharedColor){
+      continue;
+    }
+    if(playerAssignments[colorId] === playerNumber){
+      colors.push(colorId);
+    }
+  }
+  return colors;
+}
+
+function isCurrentPlayerTurn(){
+  // Check if current color is controlled by a human player (not computer)
+  if(isComputerTurn(currentPlayer)){
+    return false;
+  }
+  
+  // For shared colors in 3-player mode, check if it's the right player's turn
+  if(sharedColor !== null && currentPlayer === sharedColor){
+    // In 3-player mode, the shared color alternates between players
+    // We need to check if any human player can make a move (this is handled by the UI)
+    // For now, allow any human interaction when it's the shared color's turn
+    // The actual player assignment is handled in getPlayerForColor
+    return true;
+  }
+  
+  return true;
+}
+
+function getTurnIndicatorText(){
+  if(!gameMode) return '';
+  
+  const colorName = PLAYERS[currentPlayer].name;
+  const playerForColor = getPlayerForColor(currentPlayer);
+  
+  if(playerForColor === 'computer'){
+    return `Computer's turn (${colorName})`;
+  } else {
+    return `Player ${playerForColor}'s turn (${colorName})`;
+  }
+}
+
+function initializeGameMode(mode, numPlayers){
+  gameMode = mode;
+  numberOfPlayers = numPlayers;
+  playerAssignments = {};
+  sharedColor = null;
+  sharedColorTurn = 1;
+  
+  if(mode === 'vsComputer'){
+    if(numPlayers === 2){
+      // Player 1: Blue (0) + Red (2)
+      // Computer: Yellow (1) + Green (3)
+      playerAssignments[0] = 1; // Blue
+      playerAssignments[1] = 'computer'; // Yellow
+      playerAssignments[2] = 1; // Red
+      playerAssignments[3] = 'computer'; // Green
+    } else if(numPlayers === 4){
+      // Player 1: Blue (0)
+      // Computer: Yellow (1), Red (2), Green (3)
+      playerAssignments[0] = 1; // Blue
+      playerAssignments[1] = 'computer'; // Yellow
+      playerAssignments[2] = 'computer'; // Red
+      playerAssignments[3] = 'computer'; // Green
+    }
+  } else if(mode === 'localMultiplayer'){
+    if(numPlayers === 2){
+      // Player 1: Blue (0) + Red (2)
+      // Player 2: Yellow (1) + Green (3)
+      playerAssignments[0] = 1; // Blue
+      playerAssignments[1] = 2; // Yellow
+      playerAssignments[2] = 1; // Red
+      playerAssignments[3] = 2; // Green
+    } else if(numPlayers === 3){
+      // Player 1: Blue (0)
+      // Player 2: Yellow (1)
+      // Player 3: Red (2)
+      // Shared: Green (3)
+      playerAssignments[0] = 1; // Blue
+      playerAssignments[1] = 2; // Yellow
+      playerAssignments[2] = 3; // Red
+      sharedColor = 3; // Green is shared
+      playerAssignments[3] = 'shared'; // Mark as shared
+    } else if(numPlayers === 4){
+      // Player 1: Blue (0)
+      // Player 2: Yellow (1)
+      // Player 3: Red (2)
+      // Player 4: Green (3)
+      playerAssignments[0] = 1; // Blue
+      playerAssignments[1] = 2; // Yellow
+      playerAssignments[2] = 3; // Red
+      playerAssignments[3] = 4; // Green
+    }
+  }
+}
+
+// --- MODE SELECTION UI ---
+function showModeSelection(){
+  if(!modeSelectionOverlay) return;
+  modeSelectionOverlay.style.display = 'flex';
+  modeSelectionStep1.style.display = 'block';
+  modeSelectionStep2.style.display = 'none';
+}
+
+function hideModeSelection(){
+  if(!modeSelectionOverlay) return;
+  modeSelectionOverlay.style.display = 'none';
+}
+
+function showPlayerCountSelection(mode){
+  if(!modeSelectionStep2 || !playerCountButtons) return;
+  
+  modeSelectionStep1.style.display = 'none';
+  modeSelectionStep2.style.display = 'block';
+  playerCountButtons.innerHTML = '';
+  
+  const title = document.getElementById('player-count-title');
+  if(title){
+    title.textContent = mode === 'vsComputer' ? 'Select Number of Players' : 'Select Number of Players';
+  }
+  
+  let options = [];
+  if(mode === 'vsComputer'){
+    options = [2, 4];
+  } else {
+    options = [2, 3, 4];
+  }
+  
+  options.forEach(num => {
+    const btn = document.createElement('button');
+    btn.className = 'mode-button';
+    btn.textContent = `${num} Player${num > 1 ? 's' : ''}`;
+    btn.addEventListener('click', () => {
+      initializeGameMode(mode, num);
+      hideModeSelection();
+      init();
+    });
+    playerCountButtons.appendChild(btn);
+  });
+}
+
+// Setup mode selection event listeners
+if(modeVsComputerBtn){
+  modeVsComputerBtn.addEventListener('click', () => {
+    showPlayerCountSelection('vsComputer');
+  });
+}
+
+if(modeLocalMultiplayerBtn){
+  modeLocalMultiplayerBtn.addEventListener('click', () => {
+    showPlayerCountSelection('localMultiplayer');
+  });
+}
+
+if(modeSelectionBackBtn){
+  modeSelectionBackBtn.addEventListener('click', () => {
+    modeSelectionStep1.style.display = 'block';
+    modeSelectionStep2.style.display = 'none';
   });
 }
 
@@ -396,8 +587,20 @@ function updateBoardBorder(){
   root.style.setProperty('--board-border-color', playerColor);
 }
 
+// Update turn indicator text
+function updateTurnIndicator(){
+  if(!turnIndicatorEl) return;
+  turnIndicatorEl.textContent = getTurnIndicatorText();
+}
+
 // --- INIT ---
 function init(){
+  // If no game mode selected, show mode selection
+  if(!gameMode){
+    showModeSelection();
+    return;
+  }
+  
   board = Array.from({length:SIZE},()=>Array.from({length:SIZE},()=>null));
   usedPieces = {}; PLAYERS.forEach(p=>usedPieces[p.id]=new Set());
   currentPlayer = 0;
@@ -411,6 +614,8 @@ function init(){
   previewCell = null;
   cachedBoundingBox = null;
   isPlacing = false;
+  sharedColorTurn = 1; // Reset shared color turn for 3-player mode
+  
   // Hide win message and show sidebar elements
   if(winMessageEl){
     winMessageEl.style.display = 'none';
@@ -423,6 +628,7 @@ function init(){
   if(controlsEl) controlsEl.style.display = '';
   
   updateBoardBorder();
+  updateTurnIndicator();
   renderBoard();
   renderPalette();
   renderScores();
@@ -433,6 +639,11 @@ function init(){
   // Document-level touchmove handler to catch all touch moves for ghost preview
   document.removeEventListener('touchmove', handleDocumentTouchMove);
   document.addEventListener('touchmove', handleDocumentTouchMove, {passive: false});
+  
+  // If it's computer's turn, auto-execute move
+  if(isComputerTurn(currentPlayer)){
+    setTimeout(() => executeAutoMove(), 500);
+  }
 }
 
 
@@ -744,11 +955,29 @@ function pieceToGrid(piece){
 
 // --- RENDER PALETTE (click to select, then drag) ---
 function renderPalette(){
+  if(!paletteEl) return;
+  
   paletteEl.innerHTML='';
   cachedPieceElements = []; // Reset cache
+  
+  // Show message if it's computer's turn, but still render pieces for computer moves
+  const isComputerTurnNow = isComputerTurn(currentPlayer);
+  if(isComputerTurnNow){
+    const messageDiv = document.createElement('div');
+    messageDiv.style.padding = '20px';
+    messageDiv.style.textAlign = 'center';
+    messageDiv.style.color = '#666';
+    messageDiv.textContent = 'Computer is thinking...';
+    paletteEl.appendChild(messageDiv);
+    // Continue to render pieces so cachedPieceElements is populated for computer moves
+  }
   PIECES.forEach(piece=>{
     const wrapper=document.createElement('div');
     wrapper.className='piece';
+    // Hide pieces visually during computer turn, but keep them in DOM
+    if(isComputerTurnNow){
+      wrapper.style.display = 'none';
+    }
     wrapper.dataset.pid=piece.id;
     const isUsed = usedPieces[currentPlayer].has(piece.id);
     if(isUsed){
@@ -953,46 +1182,92 @@ function renderPalette(){
 
 // --- RENDER SCORES ---
 function renderScores(){
-  if(!scoresEl) return;
+  if(!scoresEl || !gameMode) return;
   
   // Calculate scores for all players
-  const playerScores = PLAYERS.map(player => ({
-    player: player,
-    score: calculatePlayerScore(player.id)
-  }));
+  const allPlayerScores = calculateAllPlayerScores();
   
   // Sort by score (highest first - leader)
-  playerScores.sort((a, b) => b.score - a.score);
+  allPlayerScores.sort((a, b) => b.score - a.score);
   
   // Clear and render
   scoresEl.innerHTML = '';
-  playerScores.forEach((ps, index) => {
+  allPlayerScores.forEach((ps) => {
     const row = document.createElement('div');
     row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.gap = '8px';
-    row.style.marginBottom = '4px';
-    row.style.padding = '4px';
+    row.style.flexDirection = 'column';
+    row.style.gap = '4px';
+    row.style.marginBottom = '8px';
+    row.style.padding = '8px';
+    row.style.borderRadius = '4px';
     
-    // Add highlight for current player
-    if(ps.player.id === currentPlayer){
+    // Check if current player controls any of this player's colors
+    const isCurrentPlayer = ps.colors.includes(currentPlayer);
+    if(isCurrentPlayer){
       row.style.backgroundColor = 'rgba(43, 138, 239, 0.1)';
-      row.style.borderRadius = '4px';
+      row.style.border = '1px solid rgba(43, 138, 239, 0.3)';
+    } else {
+      row.style.border = '1px solid transparent';
     }
     
-    // Player color swatch
-    const swatch = document.createElement('div');
-    swatch.style.width = '12px';
-    swatch.style.height = '12px';
-    swatch.style.borderRadius = '2px';
-    swatch.style.background = ps.player.color;
-    row.appendChild(swatch);
+    // Main score row
+    const mainRow = document.createElement('div');
+    mainRow.style.display = 'flex';
+    mainRow.style.alignItems = 'center';
+    mainRow.style.gap = '8px';
     
-    // Player name and score
-    const text = document.createElement('span');
-    text.textContent = `${ps.player.name}: ${ps.score}`;
-    text.style.fontSize = '13px';
-    row.appendChild(text);
+    // Player label
+    const label = document.createElement('span');
+    label.style.fontWeight = '600';
+    label.style.fontSize = '14px';
+    if(ps.playerNumber === 'computer'){
+      label.textContent = 'Computer:';
+      label.style.color = '#666';
+    } else if(typeof ps.playerNumber === 'string' && ps.playerNumber.startsWith('computer-')){
+      // Individual computer color in 4-player mode
+      const colorName = ps.playerNumber.replace('computer-', '');
+      label.textContent = `Computer (${colorName}):`;
+      label.style.color = '#666';
+    } else {
+      label.textContent = `Player ${ps.playerNumber}:`;
+    }
+    mainRow.appendChild(label);
+    
+    // Total score
+    const scoreText = document.createElement('span');
+    scoreText.textContent = ps.score;
+    scoreText.style.fontSize = '14px';
+    scoreText.style.fontWeight = '600';
+    mainRow.appendChild(scoreText);
+    
+    row.appendChild(mainRow);
+    
+    // Color breakdown
+    if(ps.colorBreakdown && ps.colorBreakdown.length > 0){
+      const breakdown = document.createElement('div');
+      breakdown.style.display = 'flex';
+      breakdown.style.alignItems = 'center';
+      breakdown.style.gap = '6px';
+      breakdown.style.fontSize = '12px';
+      breakdown.style.color = '#666';
+      breakdown.style.marginLeft = '4px';
+      
+      const breakdownParts = ps.colorBreakdown.map(cb => {
+        const swatch = document.createElement('span');
+        swatch.style.display = 'inline-block';
+        swatch.style.width = '8px';
+        swatch.style.height = '8px';
+        swatch.style.borderRadius = '2px';
+        swatch.style.background = PLAYERS[cb.colorId].color;
+        swatch.style.marginRight = '2px';
+        swatch.style.verticalAlign = 'middle';
+        
+        return `${cb.colorName}: ${cb.score}`;
+      });
+      
+      breakdown.textContent = `(${breakdownParts.join(', ')})`;
+      row.appendChild(breakdown);
+    }
     
     scoresEl.appendChild(row);
   });
@@ -1107,6 +1382,11 @@ function handleCellInteraction(cellEl, x, y){
 }
 function handlePlacement(cellEl, x, y){
   if(!selectedPiece || isPlacing) return;
+  // Block placement if it's not a human player's turn (but allow computer moves)
+  if(!isComputerTurn(currentPlayer) && !isCurrentPlayerTurn()){
+    showToast('Not your turn');
+    return;
+  }
   isPlacing = true; // Prevent duplicate calls
   
   // Use placement cache instead of recalculating
@@ -1136,6 +1416,11 @@ function handlePlacement(cellEl, x, y){
 
   // Invalidate valid moves cache for all players (board changed)
   PLAYERS.forEach(p => validMovesCache[p.id] = undefined);
+  
+  // Update shared color turn after a move is made on shared color (3-player mode)
+  if(sharedColor !== null && currentPlayer === sharedColor){
+    sharedColorTurn = (sharedColorTurn % 3) + 1;
+  }
 
   selectedPiece=null;selectedOrientation.index=0;selectedPieceElement=null;
   setDragging(false);
@@ -1264,14 +1549,14 @@ function getPieceSize(pieceId){
   return piece ? piece.cells.length : 0;
 }
 
-// Calculate a player's score according to official Blokus rules
-function calculatePlayerScore(playerId){
-  const unplayedSquares = getUnplayedSquares(playerId);
+// Calculate a color's score according to official Blokus rules
+function calculateColorScore(colorId){
+  const unplayedSquares = getUnplayedSquares(colorId);
   let score = -unplayedSquares; // Base score: -1 per unplayed square
   
   // Check if all 21 pieces were played
-  if(usedPieces[playerId].size === 21){
-    const lastPiece = getLastPiecePlayed(playerId);
+  if(usedPieces[colorId].size === 21){
+    const lastPiece = getLastPiecePlayed(colorId);
     if(lastPiece === '1'){ // Monomino bonus
       score += 20;
     } else {
@@ -1280,6 +1565,118 @@ function calculatePlayerScore(playerId){
   }
   
   return score;
+}
+
+// Calculate a player's total score (sum of all colors they control)
+function calculatePlayerScore(playerNumber){
+  const playerColors = getColorsForPlayer(playerNumber);
+  if(playerColors.length === 0) return 0;
+  
+  let totalScore = 0;
+  playerColors.forEach(colorId => {
+    totalScore += calculateColorScore(colorId);
+  });
+  
+  return totalScore;
+}
+
+// Calculate all player scores for end game
+function calculateAllPlayerScores(){
+  const playerScores = [];
+  
+  // Get all unique player numbers (excluding 'computer' and 'shared')
+  const playerNumbers = new Set();
+  for(let colorId = 0; colorId < 4; colorId++){
+    const player = getPlayerForColor(colorId);
+    if(player && player !== 'computer' && player !== 'shared' && typeof player === 'number'){
+      playerNumbers.add(player);
+    }
+  }
+  
+  // Add computer if it exists
+  let hasComputer = false;
+  for(let colorId = 0; colorId < 4; colorId++){
+    if(isComputerTurn(colorId)){
+      hasComputer = true;
+      break;
+    }
+  }
+  
+  // Calculate scores for each player
+  playerNumbers.forEach(playerNum => {
+    const colors = getColorsForPlayer(playerNum);
+    let totalScore = 0;
+    const colorBreakdown = [];
+    
+    colors.forEach(colorId => {
+      const colorScore = calculateColorScore(colorId);
+      totalScore += colorScore;
+      colorBreakdown.push({
+        colorId: colorId,
+        colorName: PLAYERS[colorId].name,
+        score: colorScore
+      });
+    });
+    
+    playerScores.push({
+      playerNumber: playerNum,
+      score: totalScore,
+      colors: colors,
+      colorBreakdown: colorBreakdown
+    });
+  });
+  
+  // Calculate computer score if it exists
+  if(hasComputer){
+    // In 4-player vs computer mode, show each computer color separately
+    // In 2-player vs computer mode, aggregate computer colors
+    const computerColors = [];
+    for(let colorId = 0; colorId < 4; colorId++){
+      if(isComputerTurn(colorId)){
+        computerColors.push(colorId);
+      }
+    }
+    
+    if(gameMode === 'vsComputer' && numberOfPlayers === 4){
+      // 4-player mode: show each computer color separately
+      for(const colorId of computerColors){
+        const colorScore = calculateColorScore(colorId);
+        playerScores.push({
+          playerNumber: `computer-${PLAYERS[colorId].name}`,
+          score: colorScore,
+          colors: [colorId],
+          colorBreakdown: [{
+            colorId: colorId,
+            colorName: PLAYERS[colorId].name,
+            score: colorScore
+          }]
+        });
+      }
+    } else {
+      // 2-player mode: aggregate computer colors
+      const computerBreakdown = [];
+      let computerScore = 0;
+      
+      for(const colorId of computerColors){
+        const colorScore = calculateColorScore(colorId);
+        computerScore += colorScore;
+        computerBreakdown.push({
+          colorId: colorId,
+          colorName: PLAYERS[colorId].name,
+          score: colorScore
+        });
+      }
+      
+      playerScores.push({
+        playerNumber: 'computer',
+        score: computerScore,
+        colors: computerColors,
+        colorBreakdown: computerBreakdown
+      });
+    }
+  }
+  
+  return playerScores;
 }
 
 // Sort player scores with tiebreaker rules
@@ -1387,49 +1784,74 @@ function sortPlayerScoresWithTiebreaker(playerScores){
 
 // Render final scores in the win message (same style as renderScores)
 function renderFinalScores(){
-  if(!finalScoresEl) return;
+  if(!finalScoresEl || !gameMode) return;
   
-  // Calculate scores for all players
-  const playerScores = PLAYERS.map(player => ({
-    player: player,
-    score: calculatePlayerScore(player.id)
-  }));
+  // Calculate scores for all players (player-based)
+  const allPlayerScores = calculateAllPlayerScores();
   
   // Sort by score (highest first)
-  playerScores.sort((a, b) => b.score - a.score);
-  
-  // Check if there are any ties (players with same score)
-  const hasTies = playerScores.some((ps, index) => {
-    if(index === 0) return false;
-    return ps.score === playerScores[index - 1].score;
-  });
-  
-  // Only apply tiebreaker rules if there are ties
-  const sortedScores = hasTies ? sortPlayerScoresWithTiebreaker(playerScores) : playerScores;
+  allPlayerScores.sort((a, b) => b.score - a.score);
   
   // Clear and render
   finalScoresEl.innerHTML = '';
-  sortedScores.forEach((ps, index) => {
+  allPlayerScores.forEach((ps) => {
     const row = document.createElement('div');
     row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.gap = '8px';
-    row.style.marginBottom = '4px';
-    row.style.padding = '4px';
+    row.style.flexDirection = 'column';
+    row.style.gap = '4px';
+    row.style.marginBottom = '8px';
+    row.style.padding = '8px';
+    row.style.borderRadius = '4px';
     
-    // Player color swatch
-    const swatch = document.createElement('div');
-    swatch.style.width = '12px';
-    swatch.style.height = '12px';
-    swatch.style.borderRadius = '2px';
-    swatch.style.background = ps.player.color;
-    row.appendChild(swatch);
+    // Main score row
+    const mainRow = document.createElement('div');
+    mainRow.style.display = 'flex';
+    mainRow.style.alignItems = 'center';
+    mainRow.style.gap = '8px';
     
-    // Player name and score
-    const text = document.createElement('span');
-    text.textContent = `${ps.player.name}: ${ps.score}`;
-    text.style.fontSize = '13px';
-    row.appendChild(text);
+    // Player label
+    const label = document.createElement('span');
+    label.style.fontWeight = '600';
+    label.style.fontSize = '14px';
+    if(ps.playerNumber === 'computer'){
+      label.textContent = 'Computer:';
+      label.style.color = '#666';
+    } else if(typeof ps.playerNumber === 'string' && ps.playerNumber.startsWith('computer-')){
+      // Individual computer color in 4-player mode
+      const colorName = ps.playerNumber.replace('computer-', '');
+      label.textContent = `Computer (${colorName}):`;
+      label.style.color = '#666';
+    } else {
+      label.textContent = `Player ${ps.playerNumber}:`;
+    }
+    mainRow.appendChild(label);
+    
+    // Total score
+    const scoreText = document.createElement('span');
+    scoreText.textContent = ps.score;
+    scoreText.style.fontSize = '14px';
+    scoreText.style.fontWeight = '600';
+    mainRow.appendChild(scoreText);
+    
+    row.appendChild(mainRow);
+    
+    // Color breakdown
+    if(ps.colorBreakdown && ps.colorBreakdown.length > 0){
+      const breakdown = document.createElement('div');
+      breakdown.style.display = 'flex';
+      breakdown.style.alignItems = 'center';
+      breakdown.style.gap = '6px';
+      breakdown.style.fontSize = '12px';
+      breakdown.style.color = '#666';
+      breakdown.style.marginLeft = '4px';
+      
+      const breakdownParts = ps.colorBreakdown.map(cb => {
+        return `${cb.colorName}: ${cb.score}`;
+      });
+      
+      breakdown.textContent = `(${breakdownParts.join(', ')})`;
+      row.appendChild(breakdown);
+    }
     
     finalScoresEl.appendChild(row);
   });
@@ -1437,59 +1859,34 @@ function renderFinalScores(){
 
 // End game and show results
 function endGame(){
-  // Calculate scores for all players
-  const playerScores = PLAYERS.map(player => ({
-    player: player,
-    score: calculatePlayerScore(player.id)
-  }));
+  if(!gameMode) return;
+  
+  // Calculate scores for all players (player-based)
+  const allPlayerScores = calculateAllPlayerScores();
   
   // Sort by score (highest first)
-  playerScores.sort((a, b) => b.score - a.score);
+  allPlayerScores.sort((a, b) => b.score - a.score);
   
   // Check for ties and apply tiebreaker rules
-  let winner = playerScores[0].player;
-  const topScore = playerScores[0].score;
+  let winner = allPlayerScores[0];
+  const topScore = winner.score;
   
   // Find all players with the top score (potential ties)
-  const tiedPlayers = playerScores.filter(ps => ps.score === topScore).map(ps => ps.player);
+  const tiedPlayers = allPlayerScores.filter(ps => ps.score === topScore);
   
   if(tiedPlayers.length > 1){
     // There's a tie - apply tiebreaker rules
-    const allPiecesPlaced = tiedPlayers.every(p => usedPieces[p.id].size === 21);
+    // For player-based scoring, we need to check the last piece played across all their colors
+    let winnerWithTiebreaker = null;
+    let bestTiebreakerValue = Infinity;
     
-    if(allPiecesPlaced){
-      // Special case: All tied players placed all pieces
-      // Winner is the one who placed the single-square piece (piece "1") last
-      let lastMonominoPlayer = null;
-      let lastMonominoIndex = -1;
-      
-      // Find the last player who placed piece "1"
-      for(let i = history.length - 1; i >= 0; i--){
-        const move = history[i];
-        if(!move.pass && move.pid === '1' && tiedPlayers.some(p => p.id === move.player)){
-          if(i > lastMonominoIndex){
-            lastMonominoIndex = i;
-            lastMonominoPlayer = PLAYERS.find(p => p.id === move.player);
-          }
-        }
-      }
-      
-      if(lastMonominoPlayer){
-        winner = lastMonominoPlayer;
-      } else {
-        // Fallback: if no monomino found, use first tied player
-        winner = tiedPlayers[0];
-      }
-    } else {
-      // Regular tiebreaker: winner is the one who played the smaller last piece
-      // If multiple players have the same smallest piece, the one who played it most recently wins
+    for(const tiedPlayer of tiedPlayers){
+      // Find the best (smallest) last piece across all colors for this player
       let smallestLastPieceSize = Infinity;
-      let winnerWithSmallestPiece = null;
-      let lastMoveIndex = -1;
+      let mostRecentMoveIndex = -1;
       
-      // First, find the smallest piece size among tied players
-      for(const player of tiedPlayers){
-        const lastPieceId = getLastPiecePlayed(player.id);
+      for(const colorId of tiedPlayer.colors){
+        const lastPieceId = getLastPiecePlayed(colorId);
         if(lastPieceId){
           const pieceSize = getPieceSize(lastPieceId);
           if(pieceSize < smallestLastPieceSize){
@@ -1498,30 +1895,61 @@ function endGame(){
         }
       }
       
-      // Then, find the player with the smallest piece who played it most recently
+      // Find the most recent move with the smallest piece size
       for(let i = history.length - 1; i >= 0; i--){
         const move = history[i];
-        if(!move.pass && move.pid && tiedPlayers.some(p => p.id === move.player)){
+        if(!move.pass && move.pid && tiedPlayer.colors.includes(move.player)){
           const pieceSize = getPieceSize(move.pid);
-          if(pieceSize === smallestLastPieceSize && i > lastMoveIndex){
-            lastMoveIndex = i;
-            winnerWithSmallestPiece = PLAYERS.find(p => p.id === move.player);
+          if(pieceSize === smallestLastPieceSize && i > mostRecentMoveIndex){
+            mostRecentMoveIndex = i;
           }
         }
       }
       
-      if(winnerWithSmallestPiece){
-        winner = winnerWithSmallestPiece;
+      // Check if all pieces were placed
+      const allPiecesPlaced = tiedPlayer.colors.every(colorId => usedPieces[colorId].size === 21);
+      
+      let tiebreakerValue;
+      if(allPiecesPlaced){
+        // Special case: Check for monomino bonus
+        let monominoIndex = -1;
+        for(let i = history.length - 1; i >= 0; i--){
+          const move = history[i];
+          if(!move.pass && move.pid === '1' && tiedPlayer.colors.includes(move.player)){
+            if(i > monominoIndex){
+              monominoIndex = i;
+            }
+          }
+        }
+        // Lower index (more recent) = better, so use negative
+        tiebreakerValue = monominoIndex !== -1 ? -monominoIndex : Infinity;
       } else {
-        // Fallback: if no last piece found, use first tied player
-        winner = tiedPlayers[0];
+        // Regular tiebreaker: smaller piece and more recent = better
+        tiebreakerValue = smallestLastPieceSize * 10000 - mostRecentMoveIndex;
       }
+      
+      if(tiebreakerValue < bestTiebreakerValue){
+        bestTiebreakerValue = tiebreakerValue;
+        winnerWithTiebreaker = tiedPlayer;
+      }
+    }
+    
+    if(winnerWithTiebreaker){
+      winner = winnerWithTiebreaker;
     }
   }
   
   // Set winner name
   if(winMessagePlayerEl){
-    winMessagePlayerEl.textContent = winner.name;
+    if(winner.playerNumber === 'computer'){
+      winMessagePlayerEl.textContent = 'Computer';
+    } else if(typeof winner.playerNumber === 'string' && winner.playerNumber.startsWith('computer-')){
+      // Individual computer color in 4-player mode
+      const colorName = winner.playerNumber.replace('computer-', '');
+      winMessagePlayerEl.textContent = `Computer (${colorName})`;
+    } else {
+      winMessagePlayerEl.textContent = `Player ${winner.playerNumber}`;
+    }
   }
   
   // Check if any players have valid moves
@@ -1533,9 +1961,12 @@ function endGame(){
     noValidMovesEl.style.display = hasNoValidMoves ? 'inline-block' : 'none';
   }
   
-  // Set winner border color CSS variable
+  // Set winner border color CSS variable (use first color of winner)
   const root = document.documentElement;
-  root.style.setProperty('--winner-border-color', winner.color);
+  if(winner.colors && winner.colors.length > 0){
+    const winnerColor = PLAYERS[winner.colors[0]].color;
+    root.style.setProperty('--winner-border-color', winnerColor);
+  }
   
   // Render final scores
   renderFinalScores();
@@ -1554,11 +1985,9 @@ function endGame(){
 
 // Log all player scores to console
 function logPlayerScores(){
-  const scores = PLAYERS.map(player => ({
-    name: player.name,
-    score: calculatePlayerScore(player.id)
-  }));
-  console.log('Player scores:', scores);
+  if(!gameMode) return;
+  const allPlayerScores = calculateAllPlayerScores();
+  console.log('Player scores:', allPlayerScores);
 }
 
 function nextTurn(){ 
@@ -1573,7 +2002,13 @@ function nextTurn(){
     showToast(`Player ${remainingPlayer.name} is the only player left with valid moves.`);
     logPlayerScores();
     updateBoardBorder();
+    updateTurnIndicator();
     renderScores();
+    
+    // If it's computer's turn, auto-execute
+    if(isComputerTurn(currentPlayer)){
+      setTimeout(() => executeAutoMove(), 500);
+    }
     return;
   }
   
@@ -1584,6 +2019,7 @@ function nextTurn(){
     // Don't advance currentPlayer
     logPlayerScores();
     updateBoardBorder();
+    updateTurnIndicator();
     renderScores();
     return;
   }
@@ -1592,7 +2028,7 @@ function nextTurn(){
   const startPlayer = currentPlayer;
   let attempts = 0;
   
-  // Advance to next player
+  // Advance to next color (always in order: 0→1→2→3)
   currentPlayer = (currentPlayer + 1) % PLAYERS.length;
   
   // Skip players with no valid moves
@@ -1608,9 +2044,15 @@ function nextTurn(){
   
   // Update board border color for new current player
   updateBoardBorder();
+  updateTurnIndicator();
   
   // Update scores display
   renderScores();
+  
+  // If it's computer's turn, auto-execute move
+  if(isComputerTurn(currentPlayer)){
+    setTimeout(() => executeAutoMove(), 500);
+  }
 }
 
 // --- ROTATION / FLIP ---
@@ -1670,21 +2112,93 @@ function updateSelectedPieceVisual(){
 
 // --- AUTO-MOVE ---
 
-// Find the first valid move for a player
+// Score a placement position (higher = better)
+function scorePlacement(placed, player){
+  let score = 0;
+  
+  // Prefer placements closer to corners (especially early game)
+  const corners = [
+    [0, 0], [0, SIZE-1], [SIZE-1, 0], [SIZE-1, SIZE-1]
+  ];
+  
+  // Check if any cell is in a corner
+  const isInCorner = placed.some(([x, y]) => 
+    corners.some(([cx, cy]) => x === cx && y === cy)
+  );
+  if(isInCorner){
+    score += 100; // Big bonus for corner placement
+  }
+  
+  // Prefer placements closer to edges (but not as much as corners)
+  const isOnEdge = placed.some(([x, y]) => 
+    x === 0 || x === SIZE-1 || y === 0 || y === SIZE-1
+  );
+  if(isOnEdge && !isInCorner){
+    score += 20;
+  }
+  
+  // Prefer placements that don't block future moves
+  // Count how many adjacent empty cells this placement has
+  let adjacentEmpty = 0;
+  const checked = new Set();
+  for(const [x, y] of placed){
+    const neighbors = [[x-1,y], [x+1,y], [x,y-1], [x,y+1]];
+    for(const [nx, ny] of neighbors){
+      const key = `${nx},${ny}`;
+      if(checked.has(key)) continue;
+      checked.add(key);
+      if(nx >= 0 && nx < SIZE && ny >= 0 && ny < SIZE && board[ny][nx] === null){
+        adjacentEmpty++;
+      }
+    }
+  }
+  score += adjacentEmpty * 2; // More adjacent empty = better
+  
+  // Slight preference for center positions (but less than corners/edges)
+  const centerX = SIZE / 2;
+  const centerY = SIZE / 2;
+  for(const [x, y] of placed){
+    const distFromCenter = Math.abs(x - centerX) + Math.abs(y - centerY);
+    score += (SIZE - distFromCenter) * 0.1; // Closer to center = slightly better
+  }
+  
+  // Add player-specific variation to make different computer colors play differently
+  // Use player ID as a seed for variation (so each color has consistent but different preferences)
+  const playerVariation = (player * 17) % 50; // Variation between 0-49 based on player
+  score += playerVariation;
+  
+  // Add small random factor to break ties and add unpredictability
+  // This ensures different computer colors make different moves even in similar situations
+  score += Math.random() * 10; // Random factor 0-10
+  
+  return score;
+}
+
+// Find the best valid move for a player using strategy
 function findValidMove(player){
   // Get all unused pieces for this player
   const unusedPieces = PIECES.filter(p => !usedPieces[player].has(p.id));
   if(unusedPieces.length === 0) return null;
   
-  // Shuffle pieces to randomize selection
-  const shuffledPieces = [...unusedPieces];
-  for(let i = shuffledPieces.length - 1; i > 0; i--){
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffledPieces[i], shuffledPieces[j]] = [shuffledPieces[j], shuffledPieces[i]];
-  }
+  // Sort pieces by size (largest first) - this is the key strategy
+  // Larger pieces are harder to place later, so place them early
+  const sortedPieces = [...unusedPieces].sort((a, b) => {
+    const sizeA = a.cells.length;
+    const sizeB = b.cells.length;
+    if(sizeB !== sizeA) return sizeB - sizeA; // Larger first
+    
+    // If same size, prefer more complex/irregular shapes
+    // (pieces with more unique orientations are generally more flexible)
+    const orientA = PIECE_ORIENTATIONS.get(a.id)?.length || 0;
+    const orientB = PIECE_ORIENTATIONS.get(b.id)?.length || 0;
+    return orientB - orientA; // More orientations = more flexible = place later
+  });
   
-  // For each unused piece, try all precomputed orientations at all positions
-  for(const piece of shuffledPieces){
+  // Collect all valid moves with their scores
+  const validMoves = [];
+  
+  // For each piece (sorted by size), try all orientations at all positions
+  for(const piece of sortedPieces){
     const orientations = PIECE_ORIENTATIONS.get(piece.id);
     if(!orientations) continue;
     
@@ -1702,14 +2216,36 @@ function findValidMove(player){
           
           // Check if valid (placement already adjusted and inside board)
           if(isEmpty(placed) && validBlokusContact(placed, player)){
-            return {piece, orientationIndex: orientIndex, x, y, placed};
+            const score = scorePlacement(placed, player);
+            validMoves.push({
+              piece,
+              orientationIndex: orientIndex,
+              x,
+              y,
+              placed,
+              score
+            });
           }
         }
       }
     }
+    
+    // If we found moves with this piece (largest), prefer the best one
+    // This implements "largest piece first" strategy
+    if(validMoves.length > 0){
+      // Sort by score (highest first)
+      validMoves.sort((a, b) => b.score - a.score);
+      
+      // Instead of always picking the absolute best, pick from top 3 moves
+      // This adds variety while still being strategic
+      const topMoves = validMoves.slice(0, Math.min(3, validMoves.length));
+      const selectedMove = topMoves[Math.floor(Math.random() * topMoves.length)];
+      return selectedMove;
+    }
   }
   
-  return null; // No valid move found
+  // Fallback: if no moves found with strategy, return null
+  return null;
 }
 
 // Execute a single auto-move for the current player
@@ -1774,10 +2310,10 @@ window.addEventListener('keydown',e=>{
 });
 function undo(){
   const last=history.pop();if(!last){alert('No moves');return;}
-  if(last.pass){currentPlayer=last.player;updateBoardBorder();renderPalette();renderScores();return;}
+  if(last.pass){currentPlayer=last.player;updateBoardBorder();updateTurnIndicator();renderPalette();renderScores();return;}
   last.placed.forEach(([x,y])=>board[y][x]=null);
   usedPieces[last.player].delete(last.pid);
-  currentPlayer=last.player;updateBoardBorder();renderBoard();renderPalette();renderScores();
+  currentPlayer=last.player;updateBoardBorder();updateTurnIndicator();renderBoard();renderPalette();renderScores();
 }
 flipBtn.addEventListener('click',()=>{
   if(selectedPiece && getCurrentOrientation().length > 0){
@@ -1811,11 +2347,18 @@ rotateBtn.addEventListener('click',()=>{
     }
   }
 });
-passBtn.addEventListener('click',()=>{history.push({player:currentPlayer,pass:true});nextTurn();renderPalette();});
+passBtn.addEventListener('click',()=>{
+  history.push({player:currentPlayer,pass:true});
+  // Update shared color turn after a pass on shared color (3-player mode)
+  if(sharedColor !== null && currentPlayer === sharedColor){
+    sharedColorTurn = (sharedColorTurn % 3) + 1;
+  }
+  nextTurn();renderPalette();
+});
 undoBtn.addEventListener('click',()=>{undo();});
-restartBtn.addEventListener('click',async ()=>{if(await customConfirm('Start new game?', 'Restart Game')) init();});
+restartBtn.addEventListener('click',async ()=>{if(await customConfirm('Start new game?', 'Restart Game')) {gameMode = null; init();}});
 if(restartBtnWin){
-  restartBtnWin.addEventListener('click',()=>{init();});
+  restartBtnWin.addEventListener('click',()=>{gameMode = null; init();});
 }
 endGameBtn.addEventListener('click',async ()=>{if(await customConfirm('End game and calculate scores?', 'End Game')) endGame();});
 showHintBtn.addEventListener('click',()=>{

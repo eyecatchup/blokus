@@ -62,6 +62,7 @@
               </div>
               <div class="scores">
                 <div class="section-title">Scores</div>
+                <div id="turn-indicator" style="margin-bottom: 8px; font-size: 13px; color: #666;"></div>
                 <div id="scores"></div>
               </div>
               <div id="win-message">
@@ -99,6 +100,22 @@
       <div class="footer">With ❤️ for Merlin (& Justus), <a href="https://github.com/eyecatchup/blokus">Source Code</a></div>
     </div>
     <div id="toast-container"></div>
+    <div id="mode-selection-overlay" class="mode-selection-overlay">
+      <div id="mode-selection-modal" class="mode-selection-modal">
+        <div class="section-title">Select Game Mode</div>
+        <div id="mode-selection-step1" class="mode-selection-step">
+          <div class="mode-selection-buttons">
+            <button id="mode-vs-computer" class="mode-button">Vs Computer</button>
+            <button id="mode-local-multiplayer" class="mode-button">Local Multiplayer</button>
+          </div>
+        </div>
+        <div id="mode-selection-step2" class="mode-selection-step" style="display: none;">
+          <div class="section-title" id="player-count-title">Select Number of Players</div>
+          <div class="mode-selection-buttons" id="player-count-buttons"></div>
+          <button id="mode-selection-back" class="mode-button-secondary">Back</button>
+        </div>
+      </div>
+    </div>
     <div id="confirm-modal-overlay" class="confirm-modal-overlay">
       <div id="confirm-modal" class="confirm-modal">
         <div class="section-title" id="confirm-modal-title"></div>

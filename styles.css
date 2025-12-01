@@ -337,3 +337,71 @@ button {
     color: #333;
     line-height: 1.5;
 }
+
+/* Mode Selection Modal */
+.mode-selection-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.mode-selection-modal {
+    background: #fff;
+    padding: 24px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    min-width: 320px;
+    max-width: 500px;
+    margin: 20px;
+}
+
+.mode-selection-step {
+    margin-top: 16px;
+}
+
+.mode-selection-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.mode-button {
+    padding: 12px 24px;
+    border-radius: 6px;
+    border: 2px solid #2b8aef;
+    background: #fff;
+    color: #2b8aef;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    transition: all 0.2s;
+    width: 100%;
+}
+
+.mode-button:hover {
+    background: #2b8aef;
+    color: #fff;
+}
+
+.mode-button-secondary {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+    background: #fff;
+    color: #333;
+    cursor: pointer;
+    font-size: 14px;
+    width: 100%;
+}
+
+.mode-button-secondary:hover {
+    background: #f5f5f5;
+}
