@@ -86,13 +86,12 @@
                     <li>For each square in the player's remaining pieces, the player gets <b>-1 point</b>.</li>
                     <li>Finish Bonus: If a player places all 21 pieces on the board, the player gets <b>+15 points</b>.</li>
                     <li>Monomino Bonus: If a player places all 21 pieces <em>and</em> the last piece placed was the smallest piece (single-square), the player gets an additional <b>+5 points</b>.</li>
+                    <li>For<ul>
+                      <li>2 Players: Each player's score is the sum of the scores of all their colors.</li>
+                      <li>3 Players: Each player's score is the sum of the scores of their color (excluding the shared color).</li>
+                      <li>4 Players: Each player's score is the sum of the scores of their color.</li>
+                    </ul></li>
                   </ul> 
-                  Multiplayer score count:
-                  <ul>
-                    <li>2 Players: Each player's score is the sum of the scores of all their colors.</li>
-                    <li>3 Players: Each player's score is the sum of the scores of their color (excluding the shared color).</li>
-                    <li>4 Players: Each player's score is the sum of the scores of their color.</li>
-                  </ul>
                   Tiebraker rule:
                   <ul>
                     <li>If multiple players have the same score count, the winner is the one who played the <b>smaller last piece</b>.</li>
@@ -108,7 +107,7 @@
     <div id="toast-container"></div>
     <div id="mode-selection-overlay" class="mode-selection-overlay">
       <div id="mode-selection-modal" class="mode-selection-modal">
-        <div class="section-title">How do you want to play?</div>
+        <div class="section-title mode-selection-title">Hi! 👋 How do you want to play?</div>
         <div id="mode-selection-step1" class="mode-selection-step">
           <div class="mode-selection-buttons">
             <button id="mode-vs-computer" class="mode-button"> 

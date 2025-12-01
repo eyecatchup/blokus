@@ -22,7 +22,7 @@ const PIECES = [
   {id:'T4',cells:[[0,0],[1,1],[1,0],[2,0]],name:'T4'},
   {id:'Z4',cells:[[1,0],[2,0],[0,1],[1,1]],name:'Z4'},
   // Pentominoes
-  {id:'I5',cells:[[0,0],[1,0],[2,0],[3,0],[4,0]],name:'I5'},
+  {id:'I5',cells:[[0,0],[0,1],[0,2],[0,3],[0,4]],name:'I5'},
   {id:'X',cells:[[1,0],[0,1],[1,1],[2,1],[1,2]],name:'X'},
   {id:'L5',cells:[[0,0],[0,1],[1,0],[2,0],[3,0]],name:'L5'},
   {id:'V5',cells:[[2,1],[1,1],[0,1],[0,2],[0,3]],name:'V5'},
@@ -448,6 +448,19 @@ function showPlayerCountSelection(mode){
     title.textContent = mode === 'vsComputer' ? 'Select Number of Players' : 'Select Number of Players';
   }
   
+  // Descriptions for each mode and player count
+  const descriptions = {
+    vsComputer: {
+      2: 'You play blue and red, computer plays yellow and green.',
+      4: 'You play blue, computer plays red, yellow and green.'
+    },
+    localMultiplayer: {
+      2: 'Player 1 plays blue and red. Player 2 plays yellow and green.',
+      3: 'Player 1 plays blue. Player 2 plays red. Player 3 plays yellow. All play green.',
+      4: 'Player 1 plays blue. Player 2 plays red. Player 3 plays yellow. Player 4 plays green.'
+    }
+  };
+  
   let options = [];
   if(mode === 'vsComputer'){
     options = [2, 4];
@@ -456,6 +469,14 @@ function showPlayerCountSelection(mode){
   }
   
   options.forEach(num => {
+    // Create wrapper for button and description
+    const wrapper = document.createElement('div');
+    wrapper.style.display = 'flex';
+    wrapper.style.flexDirection = 'column';
+    wrapper.style.gap = '8px';
+    wrapper.style.width = '100%';
+    
+    // Create button
     const btn = document.createElement('button');
     btn.className = 'mode-button';
     btn.textContent = `${num} Player${num > 1 ? 's' : ''}`;
@@ -464,7 +485,18 @@ function showPlayerCountSelection(mode){
       hideModeSelection();
       init();
     });
-    playerCountButtons.appendChild(btn);
+    
+    // Create description
+    const desc = document.createElement('div');
+    desc.style.fontSize = '13px';
+    desc.style.color = '#666';
+    desc.style.textAlign = 'center';
+    desc.style.lineHeight = '1.4';
+    desc.textContent = descriptions[mode][num];
+    
+    wrapper.appendChild(btn);
+    wrapper.appendChild(desc);
+    playerCountButtons.appendChild(wrapper);
   });
 }
 
